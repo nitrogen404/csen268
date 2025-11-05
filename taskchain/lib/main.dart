@@ -59,13 +59,6 @@ class _RootShellState extends State<RootShell> {
           ),
         ],
       ),
-      floatingActionButton: _index == 0
-          ? FloatingActionButton(
-              onPressed: () => setState(() => _index = 1),
-              child: const Icon(Icons.add),
-            )
-          : null,
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
     );
   }
 }
