@@ -6,6 +6,8 @@ class ChainCard extends StatelessWidget {
   final String title;
   final String days;
   final String members;
+  final VoidCallback? onTap;
+  final int unreadCount;
 
   const ChainCard({
     super.key,
@@ -13,18 +15,25 @@ class ChainCard extends StatelessWidget {
     required this.title,
     required this.days,
     required this.members,
+    this.onTap,
+    this.unreadCount = 0,
   });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            ProgressRing(progress: progress, size: 60, stroke: 7),
-            const SizedBox(width: 16),
+      child: Stack(
+        children: [
+          InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                ProgressRing(progress: progress, size: 60, stroke: 7),
+                const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -64,6 +73,37 @@ class ChainCard extends StatelessWidget {
             ),
           ],
         ),
+            ),
+          ),
+          // Unread badge
+          if (unreadCount > 0)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.red.withOpacity(0.3),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  unreadCount > 99 ? '99+' : '$unreadCount',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

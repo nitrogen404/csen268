@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../main.dart'; // for navIndex
+import '../services/auth_service.dart';
 
 class SignInPage extends StatefulWidget {
   const SignInPage({super.key});
@@ -9,8 +10,49 @@ class SignInPage extends StatefulWidget {
 }
 
 class _SignInPageState extends State<SignInPage> {
+  final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _authService = AuthService();
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _signIn() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => _isLoading = true);
+
+    try {
+      await _authService.signInWithEmailAndPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+      );
+
+      if (mounted) {
+        Navigator.pushReplacementNamed(context, '/home');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,7 +63,9 @@ class _SignInPageState extends State<SignInPage> {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 28),
-          child: ListView(
+          child: Form(
+            key: _formKey,
+            child: ListView(
             children: [
               const SizedBox(height: 80),
 
@@ -53,48 +97,14 @@ class _SignInPageState extends State<SignInPage> {
 
               const SizedBox(height: 50),
 
-              // Social sign-in
-              _socialButton(
-                icon: Icons.language_rounded,
-                label: "Continue with Google",
-                onPressed: () => _goToHome(context),
-              ),
-              const SizedBox(height: 14),
-              _socialButton(
-                icon: Icons.apple,
-                label: "Continue with Apple",
-                onPressed: () => _goToHome(context),
-              ),
-
-              const SizedBox(height: 30),
-
-              // Divider
-              Row(
-                children: [
-                  const Expanded(child: Divider(thickness: 1)),
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 8),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: cs.surfaceVariant.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text("or", style: text.bodySmall),
-                  ),
-                  const Expanded(child: Divider(thickness: 1)),
-                ],
-              ),
-
-              const SizedBox(height: 30),
-
               // Email input
               Text("Email",
                   style: text.labelLarge?.copyWith(
                       fontWeight: FontWeight.w600, color: Colors.black87)),
               const SizedBox(height: 6),
-              TextField(
+              TextFormField(
                 controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
                 decoration: InputDecoration(
                   hintText: "you@example.com",
                   filled: true,
@@ -103,7 +113,17 @@ class _SignInPageState extends State<SignInPage> {
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide.none,
                   ),
+                  errorStyle: const TextStyle(fontSize: 12),
                 ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter your email';
+                  }
+                  if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                    return 'Please enter a valid email';
+                  }
+                  return null;
+                },
               ),
 
               const SizedBox(height: 18),
@@ -113,9 +133,9 @@ class _SignInPageState extends State<SignInPage> {
                   style: text.labelLarge?.copyWith(
                       fontWeight: FontWeight.w600, color: Colors.black87)),
               const SizedBox(height: 6),
-              TextField(
+              TextFormField(
                 controller: _passwordController,
-                obscureText: true,
+                obscureText: _obscurePassword,
                 decoration: InputDecoration(
                   hintText: "••••••••",
                   filled: true,
@@ -124,16 +144,44 @@ class _SignInPageState extends State<SignInPage> {
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide.none,
                   ),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                      color: Colors.grey,
+                    ),
+                    onPressed: () {
+                      setState(() => _obscurePassword = !_obscurePassword);
+                    },
+                  ),
+                  errorStyle: const TextStyle(fontSize: 12),
                 ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter your password';
+                  }
+                  if (value.length < 6) {
+                    return 'Password must be at least 6 characters';
+                  }
+                  return null;
+                },
               ),
 
               const SizedBox(height: 28),
 
               // Sign In button
               ElevatedButton.icon(
-                onPressed: () => _goToHome(context),
-                icon: const Icon(Icons.mail_outline),
-                label: const Text("Sign In"),
+                onPressed: _isLoading ? null : _signIn,
+                icon: _isLoading
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(Icons.mail_outline),
+                label: Text(_isLoading ? "Signing In..." : "Sign In"),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFB49BFF),
                   foregroundColor: Colors.white,
@@ -150,9 +198,11 @@ class _SignInPageState extends State<SignInPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text("Don’t have an account? "),
+                  const Text("Don't have an account? "),
                   GestureDetector(
-                    onTap: () => _showSignUpDialog(context),
+                    onTap: () {
+                      Navigator.pushNamed(context, '/signup');
+                    },
                     child: Text("SIGN UP",
                         style: TextStyle(
                             color: cs.primary, fontWeight: FontWeight.w600)),
@@ -161,54 +211,9 @@ class _SignInPageState extends State<SignInPage> {
               ),
             ],
           ),
+            ),
         ),
       ),
-    );
-  }
-
-  Widget _socialButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onPressed,
-  }) {
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 20, color: Colors.black87),
-      label: Text(label,
-          style: const TextStyle(
-              fontWeight: FontWeight.w600, color: Colors.black87)),
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        side: BorderSide(color: Colors.grey.shade300),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
-  void _showSignUpDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: const Text("Sign Up"),
-        content: const Text("This is a placeholder for the sign-up flow."),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Close"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _goToHome(BuildContext context) {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) {
-        navIndex.value = 0;
-        return const RootShell();
-      }),
     );
   }
 }
