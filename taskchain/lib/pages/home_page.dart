@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../widgets/stat_tile.dart';
-import '../widgets/chain_card.dart';
+import '../widgets/chain_card_with_badge.dart';
 import 'settings_page.dart';
 import 'chain_detail_page.dart';
 
@@ -120,66 +120,69 @@ class HomePage extends StatelessWidget {
           ),
         ),
 
-        // Chain cards
-        SliverList.list(
-          children: [
-            ChainCard(
-              progress: .85,
-              title: "Daily Reading",
-              days: "12 days",
-              members: "4 members",
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ChainDetailPage(
-                      chainId: "chain_1",
-                      chainTitle: "Daily Reading",
-                      members: "4 members",
-                      progress: .85,
-                    ),
-                  ),
-                );
-              },
-            ),
-            ChainCard(
-              progress: .60,
-              title: "Morning Workout",
-              days: "7 days",
-              members: "3 members",
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ChainDetailPage(
-                      chainId: "chain_2",
-                      chainTitle: "Morning Workout",
-                      members: "3 members",
-                      progress: .60,
-                    ),
-                  ),
-                );
-              },
-            ),
-            ChainCard(
-              progress: .40,
-              title: "Learn Spanish",
-              days: "5 days",
-              members: "2 members",
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ChainDetailPage(
-                      chainId: "chain_3",
-                      chainTitle: "Learn Spanish",
-                      members: "2 members",
-                      progress: .40,
-                    ),
-                  ),
-                );
-              },
-            ),
+               // Chain cards
+               SliverList.list(
+                 children: [
+                   ChainCardWithBadge(
+                     chainId: "chain_1",
+                     progress: .85,
+                     title: "Daily Reading",
+                     days: "12 days",
+                     members: "4 members",
+                     onTap: () {
+                       Navigator.push(
+                         context,
+                         MaterialPageRoute(
+                           builder: (context) => const ChainDetailPage(
+                             chainId: "chain_1",
+                             chainTitle: "Daily Reading",
+                             members: "4 members",
+                             progress: .85,
+                           ),
+                         ),
+                       );
+                     },
+                   ),
+                   ChainCardWithBadge(
+                     chainId: "chain_2",
+                     progress: .60,
+                     title: "Morning Workout",
+                     days: "7 days",
+                     members: "3 members",
+                     onTap: () {
+                       Navigator.push(
+                         context,
+                         MaterialPageRoute(
+                           builder: (context) => const ChainDetailPage(
+                             chainId: "chain_2",
+                             chainTitle: "Morning Workout",
+                             members: "3 members",
+                             progress: .60,
+                           ),
+                         ),
+                       );
+                     },
+                   ),
+                   ChainCardWithBadge(
+                     chainId: "chain_3",
+                     progress: .40,
+                     title: "Learn Spanish",
+                     days: "5 days",
+                     members: "2 members",
+                     onTap: () {
+                       Navigator.push(
+                         context,
+                         MaterialPageRoute(
+                           builder: (context) => const ChainDetailPage(
+                             chainId: "chain_3",
+                             chainTitle: "Learn Spanish",
+                             members: "2 members",
+                             progress: .40,
+                           ),
+                         ),
+                       );
+                     },
+                   ),
             const SizedBox(height: 8),
           ],
         ),

@@ -9,6 +9,7 @@ import 'pages/profile_page.dart';
 import 'pages/sign_in_page.dart';
 import 'pages/sign_up_page.dart';
 import 'pages/onboarding_page.dart';
+import 'services/toast_notification_service.dart';
 
 /// Global nav index used by other pages to change tabs
 final ValueNotifier<int> navIndex = ValueNotifier<int>(0);
@@ -68,6 +69,24 @@ class RootShell extends StatefulWidget {
 
 class _RootShellState extends State<RootShell> {
   final _pages = const [HomePage(), CreateChainStep1(), ProfilePage()];
+  final _toastService = ToastNotificationService();
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize toast notifications after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _toastService.initialize(context);
+      // Start listening to all chains
+      _toastService.startListening(['chain_1', 'chain_2', 'chain_3']);
+    });
+  }
+
+  @override
+  void dispose() {
+    _toastService.stopListening();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

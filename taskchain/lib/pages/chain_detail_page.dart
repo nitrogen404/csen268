@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/message_service.dart';
 import '../services/auth_service.dart';
+import '../services/notification_badge_service.dart';
+import '../services/toast_notification_service.dart';
 import '../models/message.dart';
 
 class ChainDetailPage extends StatefulWidget {
@@ -24,14 +26,33 @@ class ChainDetailPage extends StatefulWidget {
 class _ChainDetailPageState extends State<ChainDetailPage> {
   final MessageService _messageService = MessageService();
   final AuthService _authService = AuthService();
+  final NotificationBadgeService _badgeService = NotificationBadgeService();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
   @override
+  void initState() {
+    super.initState();
+    // Mark chain as read when opening
+    _markAsRead();
+    // Tell toast service we're viewing this chain (don't show toasts for it)
+    ToastNotificationService().setCurrentChain(widget.chainId);
+  }
+
+  @override
   void dispose() {
+    // Clear current chain when leaving
+    ToastNotificationService().setCurrentChain(null);
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _markAsRead() async {
+    final currentUser = _authService.currentUser;
+    if (currentUser != null) {
+      await _badgeService.markChainAsRead(widget.chainId, currentUser.uid);
+    }
   }
 
   void _sendMessage() async {
