@@ -6,6 +6,7 @@ class ChainCard extends StatelessWidget {
   final String title;
   final String days;
   final String members;
+  final VoidCallback? onTap;
 
   const ChainCard({
     super.key,
@@ -13,13 +14,17 @@ class ChainCard extends StatelessWidget {
     required this.title,
     required this.days,
     required this.members,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Card(
-      child: Padding(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
@@ -63,6 +68,7 @@ class ChainCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
         ),
       ),
     );
