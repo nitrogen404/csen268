@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../services/camera_service.dart';
+import 'dart:io';
 
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({Key? key}) : super(key: key);
@@ -13,6 +15,19 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final _emailController = TextEditingController(text: "alex.johnson@email.com");
   final _bioController = TextEditingController(text: "Tell us about yourself...");
   final _locationController = TextEditingController(text: "San Francisco, CA");
+  final CameraService _cameraService = CameraService();
+  String? _profileImagePath;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfileImage();
+  }
+
+  Future<void> _loadProfileImage() async {
+    final path = await _cameraService.getSavedProfileImagePath();
+    if (mounted) setState(() => _profileImagePath = path);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,6 +45,70 @@ class _EditProfilePageState extends State<EditProfilePage> {
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              // Avatar picker
+              Center(
+                child: Column(
+                  children: [
+                    GestureDetector(
+                      onTap: _takePhoto,
+                      child: CircleAvatar(
+                        radius: 48,
+                        backgroundColor: const Color(0xFFFFC72C),
+                        backgroundImage: _profileImagePath != null
+                            ? FileImage(File(_profileImagePath!))
+                            : null,
+                        child: _profileImagePath == null
+                            ? const Text('AJ', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold))
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: () async {
+                        showModalBottomSheet<void>(
+                          context: context,
+                          builder: (context) => SafeArea(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ListTile(
+                                  leading: const Icon(Icons.camera_alt_outlined),
+                                  title: const Text('Take Photo'),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _takePhoto();
+                                  },
+                                ),
+                                ListTile(
+                                  leading: const Icon(Icons.photo_library_outlined),
+                                  title: const Text('Choose From Gallery'),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _pickFromGallery();
+                                  },
+                                ),
+                                if (_profileImagePath != null)
+                                  ListTile(
+                                    leading: const Icon(Icons.delete_outline),
+                                    title: const Text('Remove Photo'),
+                                    onTap: () async {
+                                      Navigator.pop(context);
+                                      await _cameraService.clearSavedProfileImage();
+                                      if (mounted) setState(() => _profileImagePath = null);
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.camera_alt_outlined),
+                      label: const Text('Change Photo'),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
               // PERSONAL INFO SECTION
               _sectionCard(
                 title: "Personal Information",
@@ -212,6 +291,44 @@ class _EditProfilePageState extends State<EditProfilePage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Profile updated successfully")),
       );
+    }
+  }
+
+  Future<void> _takePhoto() async {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Opening camera...')));
+    try {
+      final path = await _cameraService.takePictureAndSave();
+      if (path != null && mounted) {
+        setState(() {
+          _profileImagePath = path;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Photo saved')));
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No photo captured')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to capture photo: $e')));
+      }
+    }
+  }
+
+  Future<void> _pickFromGallery() async {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Opening gallery...')));
+    try {
+      final path = await _cameraService.pickFromGalleryAndSave();
+      if (path != null && mounted) {
+        setState(() {
+          _profileImagePath = path;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Photo saved')));
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No image selected')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to pick image: $e')));
+      }
     }
   }
 }

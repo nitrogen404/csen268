@@ -68,7 +68,7 @@ class RootShell extends StatefulWidget {
 }
 
 class _RootShellState extends State<RootShell> {
-  final _pages = const [HomePage(), CreateChainStep1(), ProfilePage()];
+  final _pages = [HomePage(), CreateChainStep1(), ProfilePage()];
   final _toastService = ToastNotificationService();
 
   @override
