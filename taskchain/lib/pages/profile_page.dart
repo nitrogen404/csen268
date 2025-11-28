@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
-import '../models/profile.dart'; 
-import '../widgets/stat_tile.dart'; 
+import 'dart:io';
+import '../models/profile.dart';
+import '../widgets/stat_tile.dart';
 import 'edit_profile_page.dart';
+import '../services/camera_service.dart';
 
 // --- Main Profile Page Widget ---
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends StatefulWidget {
   const ProfilePage({Key? key}) : super(key: key);
 
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
   final List<ProfileStat> _stats = const [
     ProfileStat('8', 'Total Chains', Icons.people_alt, AppColors.statTotalChains),
     ProfileStat('42', 'Longest Streak', Icons.local_fire_department, AppColors.statLongestStreak),
@@ -15,10 +22,37 @@ class ProfilePage extends StatelessWidget {
   ];
 
   final List<Activity> _activities = const [
-    Activity('Completed Daily Reading', '2 hours ago', Icons.accessibility_new, AppColors.statCheckIns), 
+    Activity('Completed Daily Reading', '2 hours ago', Icons.accessibility_new, AppColors.statCheckIns),
     Activity('Joined Morning Workout chain', 'Yesterday', Icons.people_alt_outlined, AppColors.statTotalChains),
     Activity('Achieved 10-day streak 🥳', '2 days ago', Icons.local_fire_department, AppColors.statLongestStreak),
   ];
+
+  final CameraService _cameraService = CameraService();
+  String? _profileImagePath;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfileImage();
+    // listen to global notifier so header updates immediately when image changes
+    CameraService.profileImageNotifier.addListener(() {
+      if (mounted) setState(() => _profileImagePath = CameraService.profileImageNotifier.value);
+    });
+  }
+
+  Future<void> _loadProfileImage() async {
+    final path = await _cameraService.getSavedProfileImagePath();
+    if (mounted) setState(() => _profileImagePath = path);
+  }
+
+  Future<void> _onEditProfile(BuildContext context) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const EditProfilePage()),
+    );
+    // Reload image after returning from edit page
+    await _loadProfileImage();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +62,7 @@ class ProfilePage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // HEADER SECTION - Custom gradient header
-            const _ProfileHeader(),
+            _ProfileHeader(imagePath: _profileImagePath, onEdit: () => _onEditProfile(context)),
 
             const SizedBox(height: 20),
 
@@ -137,7 +171,10 @@ class ProfilePage extends StatelessWidget {
 
 
 class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader();
+  final String? imagePath;
+  final Future<void> Function()? onEdit;
+
+  const _ProfileHeader({this.imagePath, this.onEdit});
 
   @override
   Widget build(BuildContext context) {
@@ -163,13 +200,8 @@ class _ProfileHeader extends StatelessWidget {
             child: Align(
               alignment: Alignment.topRight,
               child: TextButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const EditProfilePage(),
-                    ),
-                  );
+                onPressed: () async {
+                  if (onEdit != null) await onEdit!();
                 },
                 child: Text(
                   'Edit Profile',
@@ -178,10 +210,11 @@ class _ProfileHeader extends StatelessWidget {
               ),
             ),
           ),
-          const CircleAvatar(
+          CircleAvatar(
             radius: 40,
-            backgroundColor: Color(0xFFFFC72C), 
-            child: Text('AJ', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
+            backgroundColor: const Color(0xFFFFC72C),
+            backgroundImage: imagePath != null ? FileImage(File(imagePath!)) : null,
+            child: imagePath == null ? const Text('AJ', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)) : null,
           ),
           const SizedBox(height: 10),
           Text(
