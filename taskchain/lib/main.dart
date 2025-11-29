@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:animations/animations.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -70,6 +71,8 @@ class RootShell extends StatefulWidget {
 class _RootShellState extends State<RootShell> {
   final _pages = const [HomePage(), CreateChainStep1(), ProfilePage()];
   final _toastService = ToastNotificationService();
+  int _currentIndex = 0;
+  bool _reverse = false;
 
   @override
   void initState() {
@@ -80,24 +83,52 @@ class _RootShellState extends State<RootShell> {
       // Start listening to all chains
       _toastService.startListening(['chain_1', 'chain_2', 'chain_3']);
     });
+    
+    // Listen to global nav index
+    navIndex.addListener(_onNavIndexChanged);
+    _currentIndex = navIndex.value;
   }
 
   @override
   void dispose() {
+    navIndex.removeListener(_onNavIndexChanged);
     _toastService.stopListening();
     super.dispose();
   }
 
+  void _onNavIndexChanged() {
+    final newIndex = navIndex.value;
+    if (newIndex != _currentIndex) {
+      setState(() {
+        _reverse = newIndex < _currentIndex;
+        _currentIndex = newIndex;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<int>(
-      valueListenable: navIndex,
-      builder: (context, idx, _) {
     return Scaffold(
-          body: _pages[idx],
+      body: PageTransitionSwitcher(
+        duration: const Duration(milliseconds: 1000),
+        reverse: _reverse,
+        transitionBuilder: (
+          Widget child,
+          Animation<double> primaryAnimation,
+          Animation<double> secondaryAnimation,
+        ) {
+          return SharedAxisTransition(
+            animation: primaryAnimation,
+            secondaryAnimation: secondaryAnimation,
+            transitionType: SharedAxisTransitionType.horizontal,
+            child: child,
+          );
+        },
+        child: _pages[_currentIndex],
+      ),
       bottomNavigationBar: NavigationBar(
-            selectedIndex: idx,
-            onDestinationSelected: (i) => navIndex.value = i,
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (i) => navIndex.value = i,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
@@ -116,8 +147,6 @@ class _RootShellState extends State<RootShell> {
           ),
         ],
       ),
-        );
-      },
     );
   }
 }

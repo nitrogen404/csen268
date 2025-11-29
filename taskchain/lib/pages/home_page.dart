@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:animations/animations.dart';
 import '../widgets/stat_tile.dart';
 import '../widgets/chain_card_with_badge.dart';
+import '../widgets/animated_list_item.dart';
 import '../services/auth_service.dart';
 import '../services/chain_service.dart';
 import '../models/chain.dart';
@@ -14,15 +16,47 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
   final _authService = AuthService();
   final _chainService = ChainService();
   final TextEditingController _codeController = TextEditingController();
   bool _isJoining = false;
   String? _joinError;
+  late AnimationController _controller;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+
+    _fadeAnimation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOut,
+    );
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, -1.0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOut,
+    ));
+
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (mounted) {
+        _controller.forward();
+      }
+    });
+  }
 
   @override
   void dispose() {
+    _controller.dispose();
     _codeController.dispose();
     super.dispose();
   }
@@ -100,37 +134,58 @@ class _HomePageState extends State<HomePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        "Welcome back",
-                        style: text.headlineMedium?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
+                SlideTransition(
+                  position: _slideAnimation,
+                  child: FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                "Welcome back",
+                                style: text.headlineMedium?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  PageRouteBuilder(
+                                    transitionDuration: const Duration(milliseconds: 600),
+                                    pageBuilder: (context, animation, secondaryAnimation) =>
+                                        const SettingsPage(),
+                                    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                                      return SharedAxisTransition(
+                                        animation: animation,
+                                        secondaryAnimation: secondaryAnimation,
+                                        transitionType: SharedAxisTransitionType.horizontal,
+                                        child: child,
+                                      );
+                                    },
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.settings_outlined),
+                              color: Colors.white,
+                              iconSize: 28,
+                            ),
+                          ],
                         ),
-                      ),
+                        const SizedBox(height: 6),
+                        Text(
+                          "Keep those chains alive!",
+                          style: text.bodyLarge?.copyWith(color: Colors.white70),
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const SettingsPage(),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.settings_outlined),
-                      color: Colors.white,
-                      iconSize: 28,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  "Keep those chains alive!",
-                  style: text.bodyLarge?.copyWith(color: Colors.white70),
+                  ),
                 ),
                 const SizedBox(height: 20),
                 Row(
@@ -288,29 +343,42 @@ class _HomePageState extends State<HomePage> {
                 return Column(
                   children: [
                     const SizedBox(height: 8),
-                    for (final chain in chains)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: ChainCardWithBadge(
-                          chainId: chain.id,
-                          progress: chain.progress,
-                          title: chain.title,
-                          days: chain.days,
-                          members: chain.members,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => ChainDetailPage(
-                                  chainId: chain.id,
-                                  chainTitle: chain.title,
-                                  members: chain.members,
-                                  progress: chain.progress,
-                                  code: chain.code,
+                    for (var i = 0; i < chains.length; i++)
+                      AnimatedListItem(
+                        index: i,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: ChainCardWithBadge(
+                            chainId: chains[i].id,
+                            progress: chains[i].progress,
+                            title: chains[i].title,
+                            days: chains[i].days,
+                            members: chains[i].members,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                PageRouteBuilder(
+                                  transitionDuration: const Duration(milliseconds: 600),
+                                  pageBuilder: (context, animation, secondaryAnimation) =>
+                                      ChainDetailPage(
+                                    chainId: chains[i].id,
+                                    chainTitle: chains[i].title,
+                                    members: chains[i].members,
+                                    progress: chains[i].progress,
+                                    code: chains[i].code,
+                                  ),
+                                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                                    return SharedAxisTransition(
+                                      animation: animation,
+                                      secondaryAnimation: secondaryAnimation,
+                                      transitionType: SharedAxisTransitionType.horizontal,
+                                      child: child,
+                                    );
+                                  },
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
                       ),
                   ],
