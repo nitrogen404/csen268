@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
+import '../pages/sign_in_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({Key? key}) : super(key: key);
@@ -12,6 +14,8 @@ class _SettingsPageState extends State<SettingsPage> {
   bool groupActivity = true;
   bool achievements = true;
   bool darkMode = false;
+
+  final AuthService _authService = AuthService();
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +32,6 @@ class _SettingsPageState extends State<SettingsPage> {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         children: [
-          // 🔔 Notifications Section
           _sectionHeader("NOTIFICATIONS"),
 
           _toggleTile(
@@ -56,7 +59,6 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 8),
           _sectionDivider(),
 
-          // 🌙 Preferences Section
           _sectionHeader("PREFERENCES"),
 
           _toggleTile(
@@ -69,7 +71,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
           ListTile(
             leading: const Icon(Icons.language_outlined, color: Colors.green),
-            title: const Text("Language", style: TextStyle(fontWeight: FontWeight.w500, color: Colors.black)),
+            title: const Text("Language",
+                style: TextStyle(fontWeight: FontWeight.w500, color: Colors.black)),
             subtitle: const Text("English", style: TextStyle(color: Colors.black87)),
             trailing: const Text("Change", style: TextStyle(color: Colors.blue)),
             onTap: () {},
@@ -78,7 +81,6 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 8),
           _sectionDivider(),
 
-          // 🧭 Support Section
           _sectionHeader("SUPPORT & ABOUT"),
 
           _cardTile(
@@ -106,7 +108,6 @@ class _SettingsPageState extends State<SettingsPage> {
           const SizedBox(height: 8),
           _sectionDivider(),
 
-          // 🚪 Account Section
           _sectionHeader("ACCOUNT"),
 
           GestureDetector(
@@ -152,8 +153,6 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
   }
-
-  // ---------- COMPONENT HELPERS ----------
 
   Widget _sectionHeader(String title) {
     return Padding(
@@ -221,13 +220,17 @@ class _SettingsPageState extends State<SettingsPage> {
     return Divider(color: Colors.grey.shade200, thickness: 1, height: 20);
   }
 
+  // Updated sign-out logic
   void _showSignOutDialog(BuildContext context) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text("Sign Out", style: TextStyle(color: Colors.black)),
-        content: const Text("Are you sure you want to log out of your account?", style: TextStyle(color: Colors.black87)),
+        content: const Text(
+          "Are you sure you want to log out of your account?",
+          style: TextStyle(color: Colors.black87),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -238,12 +241,16 @@ class _SettingsPageState extends State<SettingsPage> {
               backgroundColor: Colors.redAccent,
               foregroundColor: Colors.white,
             ),
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
-              // TODO: Handle your logout logic here
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Signed out successfully")),
-              );
+              await _authService.signOut();
+
+              if (context.mounted) {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const SignInPage()),
+                  (route) => false,
+                );
+              }
             },
             child: const Text("Sign Out"),
           ),
@@ -252,4 +259,3 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 }
-

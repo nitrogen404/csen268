@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../main.dart'; // for navIndex to handle navigation
+import '../main.dart';
 import '../services/chain_service.dart';
 import '../services/auth_service.dart';
 import 'chain_detail_page.dart';
@@ -24,8 +24,10 @@ class CreateChainStep2 extends StatefulWidget {
 
 class _CreateChainStep2State extends State<CreateChainStep2> {
   String selectedTheme = 'Ocean';
+
   final ChainService _chainService = ChainService();
   final AuthService _authService = AuthService();
+
   bool _isCreating = false;
 
   @override
@@ -73,9 +75,7 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
           children: [
             const SizedBox(height: 12),
 
-            // Centered icon and titles
             Column(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -83,32 +83,29 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
                     color: cs.primary.withOpacity(0.1),
                     shape: BoxShape.circle,
                   ),
-                  child:
-                      Icon(Icons.palette_outlined, size: 42, color: cs.primary),
+                  child: Icon(Icons.palette_outlined, size: 42, color: cs.primary),
                 ),
                 const SizedBox(height: 12),
                 Text(
                   "Personalize & Share",
                   style: text.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 4),
                 Text(
                   "Customize your chain and invite friends",
                   style: text.bodyMedium?.copyWith(color: Colors.grey[700]),
-                  textAlign: TextAlign.center,
                 ),
               ],
             ),
 
             const SizedBox(height: 28),
 
-            // Choose Theme section
             Text(
               "Choose Theme",
               style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 12),
+
             Wrap(
               spacing: 16,
               runSpacing: 16,
@@ -127,12 +124,12 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
 
             const SizedBox(height: 28),
 
-            // Invite friends section
             Text(
               "Invite Friends (Optional)",
               style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
+
             TextField(
               decoration: InputDecoration(
                 hintText: "friend@example.com",
@@ -145,7 +142,9 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
                 ),
               ),
             ),
+
             const SizedBox(height: 16),
+
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
@@ -153,25 +152,20 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
-                children: [
-                  const Expanded(
+                children: const [
+                  Expanded(
                     child: Text(
                       "taskchain.app/join/abc123",
                       style: TextStyle(fontWeight: FontWeight.w500),
                     ),
                   ),
-                  TextButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.copy, size: 18),
-                    label: const Text("Copy"),
-                  ),
+                  Icon(Icons.copy, size: 18),
                 ],
               ),
             ),
 
             const SizedBox(height: 24),
 
-            // Invited Friends section (rounded container)
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -194,8 +188,8 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
                     ),
                     title: const Text("Sarah Johnson"),
                     subtitle: const Text("Pending"),
-                    trailing: Icon(Icons.hourglass_empty_rounded,
-                        color: cs.primary),
+                    trailing:
+                        Icon(Icons.hourglass_empty_rounded, color: cs.primary),
                   ),
                 ],
               ),
@@ -203,7 +197,6 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
 
             const SizedBox(height: 30),
 
-            // Create Chain button
             ElevatedButton(
               onPressed: _isCreating ? null : _createChain,
               style: ElevatedButton.styleFrom(
@@ -225,8 +218,7 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
                     )
                   : const Text(
                       "Create Chain",
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                     ),
             ),
           ],
@@ -237,6 +229,7 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
 
   Widget _themeOption(String name, List<Color> colors) {
     final isSelected = selectedTheme == name;
+
     return GestureDetector(
       onTap: () => setState(() => selectedTheme = name),
       child: Container(
@@ -249,9 +242,7 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(16),
-          border: isSelected
-              ? Border.all(color: Colors.white, width: 3)
-              : null,
+          border: isSelected ? Border.all(color: Colors.white, width: 3) : null,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.05),
@@ -275,6 +266,7 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
 
   Future<void> _createChain() async {
     final user = _authService.currentUser;
+
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please sign in to create a chain')),
@@ -282,9 +274,7 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
       return;
     }
 
-    setState(() {
-      _isCreating = true;
-    });
+    setState(() => _isCreating = true);
 
     try {
       final chain = await _chainService.createChain(
@@ -300,16 +290,13 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Chain created! Share this code with friends: ${chain.code}',
-          ),
-        ),
+        SnackBar(content: Text('Chain created! Share your code: ${chain.code}')),
       );
 
-      // Go to chain detail page on Home tab
       navIndex.value = 0;
-      Navigator.of(context).popUntil((route) => route.isFirst);
+
+      Navigator.of(context).popUntil((r) => r.isFirst);
+
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ChainDetailPage(
@@ -323,15 +310,12 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
       );
     } catch (e) {
       if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to create chain: $e')),
       );
     } finally {
-      if (mounted) {
-        setState(() {
-          _isCreating = false;
-        });
-      }
+      if (mounted) setState(() => _isCreating = false);
     }
   }
 }

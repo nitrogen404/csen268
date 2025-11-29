@@ -1,13 +1,11 @@
 import 'dart:math';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/chain.dart';
 
 class ChainService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// Create a new chain and add it to the owner's joined chains.
-  /// Returns the created [Chain].
+  /// Create a new chain with all correct fields
   Future<Chain> createChain({
     required String ownerId,
     required String ownerEmail,
@@ -21,7 +19,7 @@ class ChainService {
       throw 'Please enter a habit name.';
     }
 
-    // Generate a unique join code
+    // Generate a unique 6-character code
     final code = await _generateUniqueCode();
 
     final chainsRef = _firestore.collection('chains');
@@ -44,9 +42,10 @@ class ChainService {
       'createdAt': FieldValue.serverTimestamp(),
     };
 
+    // Save chain document
     await newDoc.set(chainData);
 
-    // Also add to user's joined chains
+    // Add to user's joinedChains
     final userChainRef = _firestore
         .collection('users')
         .doc(ownerId)
@@ -63,15 +62,16 @@ class ChainService {
       'joinedAt': FieldValue.serverTimestamp(),
     });
 
-    // Add owner to chain members subcollection
+    // Add owner to chain members
     final membersRef =
         _firestore.collection('chains').doc(newDoc.id).collection('members');
+
     await membersRef.doc(ownerId).set({
       'userId': ownerId,
       'email': ownerEmail,
       'role': 'owner',
       'joinedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    });
 
     return Chain(
       id: newDoc.id,
@@ -83,58 +83,7 @@ class ChainService {
     );
   }
 
-  /// Join a chain by its unique code.
-  /// Creates/updates an entry under users/{uid}/chains/{chainId}
-  Future<void> joinChainByCode({
-    required String userId,
-    required String userEmail,
-    required String code,
-  }) async {
-    final trimmedCode = code.trim();
-    if (trimmedCode.isEmpty) {
-      throw 'Please enter a code.';
-    }
-
-    // Find chain by code
-    final query = await _firestore
-        .collection('chains')
-        .where('code', isEqualTo: trimmedCode)
-        .limit(1)
-        .get();
-
-    if (query.docs.isEmpty) {
-      throw 'No chain found for this code.';
-    }
-
-    final chainDoc = query.docs.first;
-    final chain = Chain.fromFirestore(chainDoc);
-
-    final userChainRef =
-        _firestore.collection('users').doc(userId).collection('chains').doc(chain.id);
-
-    // If already joined, just update metadata
-    await userChainRef.set({
-      'chainId': chain.id,
-      'title': chain.title,
-      'days': chain.days,
-      'members': chain.members,
-      'progress': chain.progress,
-      'code': chain.code,
-      'joinedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-
-    // Add to chain members subcollection
-    final membersRef =
-        _firestore.collection('chains').doc(chain.id).collection('members');
-    await membersRef.doc(userId).set({
-      'userId': userId,
-      'email': userEmail,
-      'role': userId == chainDoc['ownerId'] ? 'owner' : 'member',
-      'joinedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
-  }
-
-  /// Stream all chains the user has joined from users/{uid}/chains
+  /// Stream all chains the user joined
   Stream<List<Chain>> streamJoinedChains(String userId) {
     return _firestore
         .collection('users')
@@ -159,13 +108,63 @@ class ChainService {
     });
   }
 
-  /// Complete today's activity for a user in a given chain.
-  /// - Only increments streaks once per calendar day (per user per chain).
-  /// - Updates:
-  ///   - users/{uid}/chains/{chainId}.currentStreak & lastCheckInDate
-  ///   - chains/{chainId}.groupStreak & lastGroupCheckInDate
-  ///   - users/{uid}.checkIns, currentStreak, longestStreak
-  ///   - users/{uid}/activity/{autoId} recent-activity entry
+  Future<List<String>> getJoinedChainIds(String userId) async {
+  final snapshot = await _firestore
+      .collection('users')
+      .doc(userId)
+      .collection('chains')
+      .get();
+
+  return snapshot.docs.map((d) => d.id).toList();
+}
+
+  /// Join chain with a code
+  Future<void> joinChainByCode({
+    required String userId,
+    required String userEmail,
+    required String code,
+  }) async {
+    final trimmed = code.trim();
+    if (trimmed.isEmpty) throw 'Please enter a code.';
+
+    final query = await _firestore
+        .collection('chains')
+        .where('code', isEqualTo: trimmed)
+        .limit(1)
+        .get();
+
+    if (query.docs.isEmpty) throw 'No chain found for this code.';
+
+    final chainDoc = query.docs.first;
+    final chain = Chain.fromFirestore(chainDoc);
+
+    final userChainRef = _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('chains')
+        .doc(chain.id);
+
+    await userChainRef.set({
+      'chainId': chain.id,
+      'title': chain.title,
+      'days': chain.days,
+      'members': chain.members,
+      'progress': chain.progress,
+      'code': chain.code,
+      'joinedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    // Add to members
+    final membersRef =
+        _firestore.collection('chains').doc(chain.id).collection('members');
+    await membersRef.doc(userId).set({
+      'userId': userId,
+      'email': userEmail,
+      'role': userId == chainDoc['ownerId'] ? 'owner' : 'member',
+      'joinedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   Future<void> completeDailyActivity({
     required String userId,
     required String userEmail,
@@ -191,13 +190,13 @@ class ChainService {
       final chainData = chainSnap.data() ?? {};
       final userData = userSnap.data() ?? {};
 
-      // ---- per-user once-per-day enforcement ----
+      // Per-user once-per-day rule
       final lastCheckIn = userChainData['lastCheckInDate'] as String?;
       if (lastCheckIn == todayKey) {
         throw 'You have already completed today\'s activity for this chain.';
       }
 
-      // ---- per-user streak ----
+      // User streak logic
       int currentStreak = (userChainData['currentStreak'] ?? 0) as int;
       if (lastCheckIn != null) {
         final last = DateTime.parse(lastCheckIn);
@@ -212,7 +211,7 @@ class ChainService {
         currentStreak = 1;
       }
 
-      // ---- group streak (once per day globally) ----
+      // Group streak logic
       int groupStreak = (chainData['groupStreak'] ?? 0) as int;
       final lastGroup = chainData['lastGroupCheckInDate'] as String?;
       if (lastGroup != todayKey) {
@@ -226,7 +225,7 @@ class ChainService {
         }
       }
 
-      // ---- user global stats ----
+      // User global stats
       final totalCheckIns = (userData['checkIns'] ?? 0) as int;
       int longestStreak = (userData['longestStreak'] ?? 0) as int;
       if (currentStreak > longestStreak) {
@@ -258,28 +257,22 @@ class ChainService {
     });
   }
 
-  /// Generate a random 6-character join code and ensure it is unique.
+  /// Generate unique 6-character join code
   Future<String> _generateUniqueCode() async {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final rand = Random.secure();
 
     while (true) {
-      final code = List.generate(
-        6,
-        (_) => chars[rand.nextInt(chars.length)],
-      ).join();
+      final code =
+          List.generate(6, (_) => chars[rand.nextInt(chars.length)]).join();
 
-      final existing = await _firestore
+      final exists = await _firestore
           .collection('chains')
           .where('code', isEqualTo: code)
           .limit(1)
           .get();
 
-      if (existing.docs.isEmpty) {
-        return code;
-      }
-      // else retry
+      if (exists.docs.isEmpty) return code;
     }
   }
 }
-

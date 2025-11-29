@@ -3,6 +3,8 @@ import 'package:animations/animations.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import 'theme.dart';
 import 'pages/home_page.dart';
 import 'pages/create_chain_step1.dart';
@@ -12,13 +14,11 @@ import 'pages/sign_up_page.dart';
 import 'pages/onboarding_page.dart';
 import 'services/toast_notification_service.dart';
 
-/// Global nav index used by other pages to change tabs
 final ValueNotifier<int> navIndex = ValueNotifier<int>(0);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Initialize Firebase
+
   await Firebase.initializeApp(
     options: const FirebaseOptions(
       apiKey: "AIzaSyBi8GrZ-W-xhwVM24coK_t77vGlwmEg2jc",
@@ -30,7 +30,7 @@ void main() async {
       measurementId: "G-PD2P5F6JRR",
     ),
   );
-  
+
   SharedPreferences prefs = await SharedPreferences.getInstance();
   bool seen = prefs.getBool('seenOnboarding') ?? false;
 
@@ -50,7 +50,23 @@ class ChainzApp extends StatelessWidget {
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),
       themeMode: ThemeMode.system,
-      initialRoute: showOnboarding ? '/onboarding' : '/login',
+
+      // Listens to authentication state and routes user accordingly
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const SizedBox.shrink();
+          }
+          if (!snapshot.hasData) {
+            return showOnboarding
+                ? const OnboardingPage()
+                : const SignInPage();
+          }
+          return const RootShell();
+        },
+      ),
+
       routes: {
         '/onboarding': (_) => const OnboardingPage(),
         '/login': (_) => const SignInPage(),
@@ -71,20 +87,18 @@ class RootShell extends StatefulWidget {
 class _RootShellState extends State<RootShell> {
   final _pages = const [HomePage(), CreateChainStep1(), ProfilePage()];
   final _toastService = ToastNotificationService();
+
   int _currentIndex = 0;
   bool _reverse = false;
 
   @override
   void initState() {
     super.initState();
-    // Initialize toast notifications after first frame
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _toastService.initialize(context);
-      // Start listening to all chains
       _toastService.startListening(['chain_1', 'chain_2', 'chain_3']);
     });
-    
-    // Listen to global nav index
+
     navIndex.addListener(_onNavIndexChanged);
     _currentIndex = navIndex.value;
   }
@@ -92,7 +106,7 @@ class _RootShellState extends State<RootShell> {
   @override
   void dispose() {
     navIndex.removeListener(_onNavIndexChanged);
-    _toastService.stopListening();
+    _toastService.dispose();
     super.dispose();
   }
 
@@ -114,12 +128,12 @@ class _RootShellState extends State<RootShell> {
         reverse: _reverse,
         transitionBuilder: (
           Widget child,
-          Animation<double> primaryAnimation,
-          Animation<double> secondaryAnimation,
+          Animation<double> primary,
+          Animation<double> secondary,
         ) {
           return SharedAxisTransition(
-            animation: primaryAnimation,
-            secondaryAnimation: secondaryAnimation,
+            animation: primary,
+            secondaryAnimation: secondary,
             transitionType: SharedAxisTransitionType.horizontal,
             child: child,
           );

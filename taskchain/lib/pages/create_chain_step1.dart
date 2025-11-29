@@ -25,7 +25,6 @@ class _CreateChainStep1State extends State<CreateChainStep1> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
           onPressed: () {
-            // Pop if possible; otherwise return to Home tab.
             if (Navigator.of(context).canPop()) {
               Navigator.of(context).pop();
             } else {
@@ -69,11 +68,8 @@ class _CreateChainStep1State extends State<CreateChainStep1> {
                     color: cs.primary.withOpacity(0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(
-                    Icons.auto_awesome_outlined,
-                    size: 42,
-                    color: cs.primary,
-                  ),
+                  child: Icon(Icons.auto_awesome_outlined,
+                      size: 42, color: cs.primary),
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -92,7 +88,6 @@ class _CreateChainStep1State extends State<CreateChainStep1> {
             ),
             const SizedBox(height: 28),
 
-            // Heading above the habit name input
             Text(
               "Habit Name",
               style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
@@ -177,7 +172,8 @@ class _CreateChainStep1State extends State<CreateChainStep1> {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Tip: Choose something specific and achievable. "Read 10 pages" works better than "Read more."',
+                      'Tip: Choose something specific and achievable. '
+                      '"Read 10 pages" works better than "Read more."',
                     ),
                   ),
                 ],

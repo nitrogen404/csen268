@@ -22,6 +22,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   final TextEditingController _codeController = TextEditingController();
   bool _isJoining = false;
   String? _joinError;
+
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
@@ -48,9 +49,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     ));
 
     Future.delayed(const Duration(milliseconds: 600), () {
-      if (mounted) {
-        _controller.forward();
-      }
+      if (mounted) _controller.forward();
     });
   }
 
@@ -63,6 +62,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
   Future<void> _joinChain() async {
     final user = _authService.currentUser;
+
     if (user == null) {
       setState(() {
         _joinError = 'Please sign in to join a chain.';
@@ -89,6 +89,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
         userEmail: user.email ?? '',
         code: code,
       );
+
       if (!mounted) return;
       _codeController.clear();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -96,15 +97,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _joinError = e.toString();
-      });
+      setState(() => _joinError = e.toString());
     } finally {
-      if (mounted) {
-        setState(() {
-          _isJoining = false;
-        });
-      }
+      if (mounted) setState(() => _isJoining = false);
     }
   }
 
@@ -112,138 +107,148 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-
     final currentUser = _authService.currentUser;
 
     return CustomScrollView(
       slivers: [
-        // Gradient header
+        // Header Section (dynamic: depends on chain count)
         SliverToBoxAdapter(
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(20, 60, 20, 24),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [const Color(0xFF7B61FF), const Color(0xFFFF6EC7)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: const BorderRadius.vertical(
-                bottom: Radius.circular(28),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SlideTransition(
-                  position: _slideAnimation,
-                  child: FadeTransition(
-                    opacity: _fadeAnimation,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          child: StreamBuilder<List<Chain>>(
+            stream: currentUser != null
+                ? _chainService.streamJoinedChains(currentUser.uid)
+                : const Stream.empty(),
+            builder: (context, snapshot) {
+              final hasChains = (snapshot.data ?? []).isNotEmpty;
+
+              return Container(
+                padding: const EdgeInsets.fromLTRB(20, 60, 20, 24),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFF7B61FF),
+                      const Color(0xFFFF6EC7)
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(28),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SlideTransition(
+                      position: _slideAnimation,
+                      child: FadeTransition(
+                        opacity: _fadeAnimation,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: Text(
-                                "Welcome back",
-                                style: text.headlineMedium?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  PageRouteBuilder(
-                                    transitionDuration: const Duration(milliseconds: 600),
-                                    pageBuilder: (context, animation, secondaryAnimation) =>
-                                        const SettingsPage(),
-                                    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                                      return SharedAxisTransition(
-                                        animation: animation,
-                                        secondaryAnimation: secondaryAnimation,
-                                        transitionType: SharedAxisTransitionType.horizontal,
-                                        child: child,
-                                      );
-                                    },
+                            // Header row with settings button
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    hasChains ? "Welcome back" : "Welcome to TaskChain",
+                                    style: text.headlineMedium?.copyWith(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
-                                );
-                              },
-                              icon: const Icon(Icons.settings_outlined),
-                              color: Colors.white,
-                              iconSize: 28,
+                                ),
+                                IconButton(
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      PageRouteBuilder(
+                                        transitionDuration:
+                                            const Duration(milliseconds: 600),
+                                        pageBuilder: (_, animation, secondary) =>
+                                            const SettingsPage(),
+                                        transitionsBuilder: (_, animation, secondary, child) {
+                                          return SharedAxisTransition(
+                                            animation: animation,
+                                            secondaryAnimation: secondary,
+                                            transitionType: SharedAxisTransitionType.horizontal,
+                                            child: child,
+                                          );
+                                        },
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.settings_outlined),
+                                  color: Colors.white,
+                                  iconSize: 28,
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 6),
+
+                            Text(
+                              hasChains
+                                  ? "Keep those chains alive!"
+                                  : "Create your first habit chain to get started.",
+                              style: text.bodyLarge?.copyWith(color: Colors.white70),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          "Keep those chains alive!",
-                          style: text.bodyLarge?.copyWith(color: Colors.white70),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: const [
-                    Expanded(
-                      child: StatTile(
-                        icon: Icons.local_fire_department,
-                        value: "42",
-                        label: "Total Days",
                       ),
                     ),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: StatTile(
-                        icon: Icons.group,
-                        value: "9",
-                        label: "Friends Active",
+
+                    const SizedBox(height: 24),
+
+                    // Only show static stats if user has ≥1 chain
+                    if (hasChains)
+                      Row(
+                        children: const [
+                          Expanded(
+                            child: StatTile(
+                              icon: Icons.local_fire_department,
+                              value: "42",
+                              label: "Total Days",
+                            ),
+                          ),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: StatTile(
+                              icon: Icons.group,
+                              value: "9",
+                              label: "Friends Active",
+                            ),
+                          ),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: StatTile(
+                              icon: Icons.show_chart,
+                              value: "78%",
+                              label: "Avg Progress",
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    SizedBox(width: 12),
-                    Expanded(
-                      child: StatTile(
-                        icon: Icons.show_chart,
-                        value: "78%",
-                        label: "Avg Progress",
-                      ),
-                    ),
                   ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
         ),
 
-        // Your Chains header + join form
+        // Your Chains Section
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Text(
-                      "Your Chains",
-                      style:
-                          text.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const Spacer(),
-                    if (currentUser == null)
-                      const Text(
-                        'Sign in to join',
-                        style: TextStyle(color: Colors.redAccent, fontSize: 12),
-                      ),
-                  ],
+                Text(
+                  "Your Chains",
+                  style: text.titleLarge?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 12),
-                // Join a chain input
+
                 Row(
                   children: [
                     Expanded(
@@ -251,7 +256,6 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                         controller: _codeController,
                         decoration: InputDecoration(
                           labelText: 'Enter chain code',
-                          hintText: 'e.g. ABC123',
                           filled: true,
                           fillColor: cs.surfaceVariant.withOpacity(0.5),
                           border: OutlineInputBorder(
@@ -283,6 +287,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     ),
                   ],
                 ),
+
                 if (_joinError != null) ...[
                   const SizedBox(height: 6),
                   Text(
@@ -295,46 +300,19 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
           ),
         ),
 
-        // Chain cards (joined chains)
-        if (currentUser == null)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Text(
-                'Sign in to see the chains you have joined.',
-                style: text.bodyMedium?.copyWith(color: Colors.grey),
-              ),
-            ),
-          )
-        else
+        // Joined Chains List
+        if (currentUser != null)
           SliverToBoxAdapter(
             child: StreamBuilder<List<Chain>>(
               stream: _chainService.streamJoinedChains(currentUser.uid),
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-
-                if (snapshot.hasError) {
-                  return Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      'Failed to load your chains.',
-                      style: text.bodyMedium?.copyWith(color: Colors.redAccent),
-                    ),
-                  );
-                }
-
                 final chains = snapshot.data ?? [];
 
                 if (chains.isEmpty) {
                   return Padding(
                     padding: const EdgeInsets.all(16),
                     child: Text(
-                      'You haven\'t joined any chains yet.\nEnter a code above to join a chain.',
+                      'You haven\'t joined any chains yet.\nEnter a code above to join.',
                       style: text.bodyMedium,
                     ),
                   );
@@ -358,8 +336,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                               Navigator.push(
                                 context,
                                 PageRouteBuilder(
-                                  transitionDuration: const Duration(milliseconds: 600),
-                                  pageBuilder: (context, animation, secondaryAnimation) =>
+                                  transitionDuration:
+                                      const Duration(milliseconds: 600),
+                                  pageBuilder: (_, animation, secondary) =>
                                       ChainDetailPage(
                                     chainId: chains[i].id,
                                     chainTitle: chains[i].title,
@@ -367,11 +346,12 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                     progress: chains[i].progress,
                                     code: chains[i].code,
                                   ),
-                                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                                  transitionsBuilder: (_, animation, secondary, child) {
                                     return SharedAxisTransition(
                                       animation: animation,
-                                      secondaryAnimation: secondaryAnimation,
-                                      transitionType: SharedAxisTransitionType.horizontal,
+                                      secondaryAnimation: secondary,
+                                      transitionType:
+                                          SharedAxisTransitionType.horizontal,
                                       child: child,
                                     );
                                   },
@@ -387,45 +367,56 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             ),
           ),
 
-        // Recent Achievements header
+        // Achievements — only show if user has chains
         SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-            child: Text(
-              "Recent Achievements",
-              style: text.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ),
+          child: StreamBuilder<List<Chain>>(
+            stream: currentUser != null
+                ? _chainService.streamJoinedChains(currentUser.uid)
+                : const Stream.empty(),
+            builder: (context, snapshot) {
+              final hasChains = (snapshot.data ?? []).isNotEmpty;
+              if (!hasChains) return const SizedBox.shrink();
 
-        // Achievements row
-        SliverToBoxAdapter(
-          child: SizedBox(
-            height: 140,
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              scrollDirection: Axis.horizontal,
-              children: const [
-                _Achieve(
-                  icon: Icons.emoji_events,
-                  title: "Streak x10",
-                  subtitle: "Nice consistency!",
-                ),
-                _Achieve(
-                  icon: Icons.business_rounded,
-                  title: "Goal Hit",
-                  subtitle: "3 goals this week",
-                ),
-                _Achieve(
-                  icon: Icons.shield_moon,
-                  title: "Night Owl",
-                  subtitle: "Tasks after 10pm",
-                ),
-              ],
-            ),
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                    child: Text(
+                      "Recent Achievements",
+                      style: text.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  SizedBox(
+                    height: 140,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      children: const [
+                        _Achieve(
+                          icon: Icons.emoji_events,
+                          title: "Streak x10",
+                          subtitle: "Nice consistency!",
+                        ),
+                        _Achieve(
+                          icon: Icons.business_rounded,
+                          title: "Goal Hit",
+                          subtitle: "3 goals this week",
+                        ),
+                        _Achieve(
+                          icon: Icons.shield_moon,
+                          title: "Night Owl",
+                          subtitle: "Tasks after 10pm",
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              );
+            },
           ),
         ),
-        const SliverToBoxAdapter(child: SizedBox(height: 24)),
       ],
     );
   }
@@ -460,9 +451,10 @@ class _Achieve extends StatelessWidget {
           const Spacer(),
           Text(
             title,
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
           Text(subtitle),
