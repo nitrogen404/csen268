@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../main.dart'; // for navIndex
 import '../services/auth_service.dart';
+import '../services/user_service.dart';
 
 class SignInPage extends StatefulWidget {
   const SignInPage({super.key});
@@ -14,6 +15,7 @@ class _SignInPageState extends State<SignInPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _authService = AuthService();
+  final _userService = UserService();
   bool _isLoading = false;
   bool _obscurePassword = true;
 
@@ -30,10 +32,15 @@ class _SignInPageState extends State<SignInPage> {
     setState(() => _isLoading = true);
 
     try {
-      await _authService.signInWithEmailAndPassword(
+      final cred = await _authService.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
+
+      if (cred != null && cred.user != null) {
+        // In case profile doc is missing (older accounts), ensure it exists
+        await _userService.ensureUserProfile(cred.user!);
+      }
 
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/home');

@@ -93,29 +93,29 @@ class _RootShellState extends State<RootShell> {
     return ValueListenableBuilder<int>(
       valueListenable: navIndex,
       builder: (context, idx, _) {
-        return Scaffold(
+    return Scaffold(
           body: _pages[idx],
-          bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: NavigationBar(
             selectedIndex: idx,
             onDestinationSelected: (i) => navIndex.value = i,
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.home_outlined),
-                selectedIcon: Icon(Icons.home),
-                label: 'Home',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.add_circle_outline),
-                selectedIcon: Icon(Icons.add_circle),
-                label: 'Create',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.person_outline),
-                selectedIcon: Icon(Icons.person),
-                label: 'Profile',
-              ),
-            ],
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Home',
           ),
+          NavigationDestination(
+            icon: Icon(Icons.add_circle_outline),
+            selectedIcon: Icon(Icons.add_circle),
+            label: 'Create',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: 'Profile',
+          ),
+        ],
+      ),
         );
       },
     );

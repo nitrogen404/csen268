@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
+import '../services/user_service.dart';
 
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({Key? key}) : super(key: key);
@@ -9,10 +11,13 @@ class EditProfilePage extends StatefulWidget {
 
 class _EditProfilePageState extends State<EditProfilePage> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController(text: "Alex Johnson");
-  final _emailController = TextEditingController(text: "alex.johnson@email.com");
-  final _bioController = TextEditingController(text: "Tell us about yourself...");
-  final _locationController = TextEditingController(text: "San Francisco, CA");
+  final _nameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _bioController = TextEditingController();
+  final _locationController = TextEditingController();
+  final _authService = AuthService();
+  final _userService = UserService();
+  bool _loading = true;
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +30,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
         title: const Text("Edit Profile", style: TextStyle(color: Colors.black)),
       ),
       body: SafeArea(
-        child: Form(
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : Form(
           key: _formKey,
           child: ListView(
             padding: const EdgeInsets.all(16),
@@ -208,10 +215,58 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   void _saveChanges() {
-    if (_formKey.currentState!.validate()) {
+    if (!_formKey.currentState!.validate()) return;
+
+    final user = _authService.currentUser;
+    if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Profile updated successfully")),
+        const SnackBar(content: Text("You must be signed in to update profile")),
       );
+      return;
+    }
+
+    _userService.updateProfile(
+      userId: user.uid,
+      displayName: _nameController.text.trim(),
+      email: _emailController.text.trim(),
+      bio: _bioController.text.trim(),
+      location: _locationController.text.trim(),
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Profile updated successfully")),
+    );
+    Navigator.pop(context);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final user = _authService.currentUser;
+    if (user == null) {
+      setState(() => _loading = false);
+      return;
+    }
+
+    try {
+      final doc = await _userService.getUserProfile(user.uid);
+      final data = doc.data() ?? {};
+      _nameController.text =
+          (data['displayName'] as String?) ?? (user.email ?? 'TaskChain User');
+      _emailController.text =
+          (data['email'] as String?) ?? (user.email ?? '');
+      _bioController.text = (data['bio'] as String?) ?? '';
+      _locationController.text = (data['location'] as String?) ?? '';
+    } catch (_) {
+      // ignore, just fall back to defaults
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 }

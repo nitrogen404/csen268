@@ -159,6 +159,105 @@ class ChainService {
     });
   }
 
+  /// Complete today's activity for a user in a given chain.
+  /// - Only increments streaks once per calendar day (per user per chain).
+  /// - Updates:
+  ///   - users/{uid}/chains/{chainId}.currentStreak & lastCheckInDate
+  ///   - chains/{chainId}.groupStreak & lastGroupCheckInDate
+  ///   - users/{uid}.checkIns, currentStreak, longestStreak
+  ///   - users/{uid}/activity/{autoId} recent-activity entry
+  Future<void> completeDailyActivity({
+    required String userId,
+    required String userEmail,
+    required String chainId,
+    required String chainTitle,
+  }) async {
+    final now = DateTime.now().toUtc();
+    final todayKey =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+    final userChainRef =
+        _firestore.collection('users').doc(userId).collection('chains').doc(chainId);
+    final chainRef = _firestore.collection('chains').doc(chainId);
+    final userRef = _firestore.collection('users').doc(userId);
+    final activityRef = userRef.collection('activity').doc();
+
+    await _firestore.runTransaction((tx) async {
+      final userChainSnap = await tx.get(userChainRef);
+      final chainSnap = await tx.get(chainRef);
+      final userSnap = await tx.get(userRef);
+
+      final userChainData = userChainSnap.data() ?? {};
+      final chainData = chainSnap.data() ?? {};
+      final userData = userSnap.data() ?? {};
+
+      // ---- per-user once-per-day enforcement ----
+      final lastCheckIn = userChainData['lastCheckInDate'] as String?;
+      if (lastCheckIn == todayKey) {
+        throw 'You have already completed today\'s activity for this chain.';
+      }
+
+      // ---- per-user streak ----
+      int currentStreak = (userChainData['currentStreak'] ?? 0) as int;
+      if (lastCheckIn != null) {
+        final last = DateTime.parse(lastCheckIn);
+        final lastDate = DateTime.utc(last.year, last.month, last.day);
+        final diff = now.difference(lastDate).inDays;
+        if (diff == 1) {
+          currentStreak += 1;
+        } else {
+          currentStreak = 1;
+        }
+      } else {
+        currentStreak = 1;
+      }
+
+      // ---- group streak (once per day globally) ----
+      int groupStreak = (chainData['groupStreak'] ?? 0) as int;
+      final lastGroup = chainData['lastGroupCheckInDate'] as String?;
+      if (lastGroup != todayKey) {
+        if (lastGroup != null) {
+          final last = DateTime.parse(lastGroup);
+          final lastDate = DateTime.utc(last.year, last.month, last.day);
+          final diff = now.difference(lastDate).inDays;
+          groupStreak = (diff == 1) ? groupStreak + 1 : 1;
+        } else {
+          groupStreak = 1;
+        }
+      }
+
+      // ---- user global stats ----
+      final totalCheckIns = (userData['checkIns'] ?? 0) as int;
+      int longestStreak = (userData['longestStreak'] ?? 0) as int;
+      if (currentStreak > longestStreak) {
+        longestStreak = currentStreak;
+      }
+
+      tx.set(userChainRef, {
+        'lastCheckInDate': todayKey,
+        'currentStreak': currentStreak,
+      }, SetOptions(merge: true));
+
+      tx.set(chainRef, {
+        'lastGroupCheckInDate': todayKey,
+        'groupStreak': groupStreak,
+      }, SetOptions(merge: true));
+
+      tx.set(userRef, {
+        'checkIns': totalCheckIns + 1,
+        'currentStreak': currentStreak,
+        'longestStreak': longestStreak,
+      }, SetOptions(merge: true));
+
+      tx.set(activityRef, {
+        'chainId': chainId,
+        'chainTitle': chainTitle,
+        'description': 'Completed $chainTitle',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
   /// Generate a random 6-character join code and ensure it is unique.
   Future<String> _generateUniqueCode() async {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

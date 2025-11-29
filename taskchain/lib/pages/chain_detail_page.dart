@@ -5,6 +5,7 @@ import '../services/message_service.dart';
 import '../services/auth_service.dart';
 import '../services/notification_badge_service.dart';
 import '../services/toast_notification_service.dart';
+import '../services/chain_service.dart';
 import '../models/message.dart';
 
 class ChainDetailPage extends StatefulWidget {
@@ -31,6 +32,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   final MessageService _messageService = MessageService();
   final AuthService _authService = AuthService();
   final NotificationBadgeService _badgeService = NotificationBadgeService();
+  final ChainService _chainService = ChainService();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -217,6 +219,19 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                   borderRadius: BorderRadius.circular(4),
                 ),
               ],
+            ),
+          ),
+
+          // Complete activity button
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _onCompleteToday,
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text("Complete today's activity"),
+              ),
             ),
           ),
 
@@ -427,6 +442,34 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
       return '${difference.inHours}h ago';
     } else {
       return '${timestamp.hour}:${timestamp.minute.toString().padLeft(2, '0')}';
+    }
+  }
+
+  Future<void> _onCompleteToday() async {
+    final user = _authService.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please sign in to complete activities')),
+      );
+      return;
+    }
+
+    try {
+      await _chainService.completeDailyActivity(
+        userId: user.uid,
+        userEmail: user.email ?? '',
+        chainId: widget.chainId,
+        chainTitle: widget.chainTitle,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nice! Today\'s activity is completed.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
     }
   }
 

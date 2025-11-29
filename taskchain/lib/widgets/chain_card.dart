@@ -28,12 +28,12 @@ class ChainCard extends StatelessWidget {
           InkWell(
             onTap: onTap,
             borderRadius: BorderRadius.circular(12),
-            child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                ProgressRing(progress: progress, size: 60, stroke: 7),
-                const SizedBox(width: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            ProgressRing(progress: progress, size: 60, stroke: 7),
+            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
