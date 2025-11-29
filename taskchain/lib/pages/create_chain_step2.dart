@@ -1,8 +1,22 @@
 import 'package:flutter/material.dart';
 import '../main.dart'; // for navIndex to handle navigation
+import '../services/chain_service.dart';
+import '../services/auth_service.dart';
+import 'chain_detail_page.dart';
 
 class CreateChainStep2 extends StatefulWidget {
-  const CreateChainStep2({super.key});
+  final String habitName;
+  final String frequency;
+  final DateTime? startDate;
+  final int durationDays;
+
+  const CreateChainStep2({
+    super.key,
+    required this.habitName,
+    required this.frequency,
+    required this.startDate,
+    required this.durationDays,
+  });
 
   @override
   State<CreateChainStep2> createState() => _CreateChainStep2State();
@@ -10,6 +24,9 @@ class CreateChainStep2 extends StatefulWidget {
 
 class _CreateChainStep2State extends State<CreateChainStep2> {
   String selectedTheme = 'Ocean';
+  final ChainService _chainService = ChainService();
+  final AuthService _authService = AuthService();
+  bool _isCreating = false;
 
   @override
   Widget build(BuildContext context) {
@@ -188,12 +205,7 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
 
             // Create Chain button
             ElevatedButton(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Chain created successfully!")),
-                );
-                navIndex.value = 0;
-              },
+              onPressed: _isCreating ? null : _createChain,
               style: ElevatedButton.styleFrom(
                 backgroundColor: cs.primary,
                 foregroundColor: Colors.white,
@@ -202,10 +214,20 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
                   borderRadius: BorderRadius.circular(14),
                 ),
               ),
-              child: const Text(
-                "Create Chain",
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
+              child: _isCreating
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text(
+                      "Create Chain",
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    ),
             ),
           ],
         ),
@@ -249,5 +271,67 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
         ),
       ),
     );
+  }
+
+  Future<void> _createChain() async {
+    final user = _authService.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please sign in to create a chain')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isCreating = true;
+    });
+
+    try {
+      final chain = await _chainService.createChain(
+        ownerId: user.uid,
+        ownerEmail: user.email ?? '',
+        title: widget.habitName,
+        frequency: widget.frequency,
+        startDate: widget.startDate,
+        durationDays: widget.durationDays,
+        theme: selectedTheme,
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Chain created! Share this code with friends: ${chain.code}',
+          ),
+        ),
+      );
+
+      // Go to chain detail page on Home tab
+      navIndex.value = 0;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ChainDetailPage(
+            chainId: chain.id,
+            chainTitle: chain.title,
+            members: chain.members,
+            progress: chain.progress,
+            code: chain.code,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to create chain: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCreating = false;
+        });
+      }
+    }
   }
 }

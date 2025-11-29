@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/message_service.dart';
 import '../services/auth_service.dart';
 import '../services/notification_badge_service.dart';
@@ -10,6 +12,7 @@ class ChainDetailPage extends StatefulWidget {
   final String chainTitle;
   final String members;
   final double progress;
+  final String code;
 
   const ChainDetailPage({
     Key? key,
@@ -17,6 +20,7 @@ class ChainDetailPage extends StatefulWidget {
     required this.chainTitle,
     required this.members,
     required this.progress,
+    required this.code,
   }) : super(key: key);
 
   @override
@@ -132,6 +136,18 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
       backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(widget.chainTitle),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.group_outlined),
+            tooltip: 'View members',
+            onPressed: _showMembersSheet,
+          ),
+          IconButton(
+            icon: const Icon(Icons.share_outlined),
+            tooltip: 'Share chain',
+            onPressed: _showShareSheet,
+          ),
+        ],
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
@@ -412,6 +428,214 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     } else {
       return '${timestamp.hour}:${timestamp.minute.toString().padLeft(2, '0')}';
     }
+  }
+
+  void _showMembersSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text(
+                'Chain Members',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'People who have joined this chain.',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 260,
+                child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: FirebaseFirestore.instance
+                      .collection('chains')
+                      .doc(widget.chainId)
+                      .collection('members')
+                      .orderBy('joinedAt', descending: false)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Text(
+                          'Failed to load members',
+                          style: TextStyle(color: cs.error),
+                        ),
+                      );
+                    }
+                    final docs = snapshot.data?.docs ?? [];
+                    if (docs.isEmpty) {
+                      return const Center(
+                        child: Text('No members yet. Share the code to invite.'),
+                      );
+                    }
+
+                    return ListView.builder(
+                      itemCount: docs.length,
+                      itemBuilder: (context, index) {
+                        final data = docs[index].data();
+                        final email = data['email'] as String? ?? 'Unknown';
+                        final role = data['role'] as String? ?? 'member';
+                        final isOwner = role == 'owner';
+                        final isCurrent =
+                            data['userId'] == _authService.currentUser?.uid;
+
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: cs.primary.withOpacity(0.1),
+                            child: Text(
+                              email.isNotEmpty
+                                  ? email[0].toUpperCase()
+                                  : '?',
+                              style: TextStyle(color: cs.primary),
+                            ),
+                          ),
+                          title: Text(
+                            isCurrent ? '$email (You)' : email,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            isOwner ? 'Owner' : 'Member',
+                            style: TextStyle(
+                              color:
+                                  isOwner ? cs.primary : Colors.grey.shade600,
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showShareSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Text(
+                'Share Chain',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Invite friends to join this chain using the code or QR below.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 20),
+              // QR Code
+              QrImageView(
+                data: widget.code,
+                version: QrVersions.auto,
+                size: 180,
+                eyeStyle: QrEyeStyle(
+                  eyeShape: QrEyeShape.circle,
+                  color: cs.primary,
+                ),
+                dataModuleStyle: QrDataModuleStyle(
+                  dataModuleShape: QrDataModuleShape.circle,
+                  color: cs.primary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Code display
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: cs.surfaceVariant,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.lock_open, size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      widget.code,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Share this code with friends so they can join from the home screen.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 }
 

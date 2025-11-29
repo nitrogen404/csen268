@@ -187,9 +187,23 @@ class _CreateChainStep1State extends State<CreateChainStep1> {
 
             ElevatedButton(
               onPressed: () {
+                if (_habitController.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Please enter a habit name')),
+                  );
+                  return;
+                }
+
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const CreateChainStep2()),
+                  MaterialPageRoute(
+                    builder: (_) => CreateChainStep2(
+                      habitName: _habitController.text.trim(),
+                      frequency: frequency,
+                      startDate: startDate,
+                      durationDays: duration,
+                    ),
+                  ),
                 );
               },
               style: ElevatedButton.styleFrom(
