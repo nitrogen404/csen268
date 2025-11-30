@@ -16,6 +16,8 @@ import 'services/toast_notification_service.dart';
 
 final ValueNotifier<int> navIndex = ValueNotifier<int>(0);
 
+// Main class
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
