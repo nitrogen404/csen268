@@ -19,17 +19,7 @@ final ValueNotifier<int> navIndex = ValueNotifier<int>(0);
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: const FirebaseOptions(
-      apiKey: "AIzaSyBi8GrZ-W-xhwVM24coK_t77vGlwmEg2jc",
-      authDomain: "taskchain-439617.firebaseapp.com",
-      projectId: "taskchain-439617",
-      storageBucket: "taskchain-439617.firebasestorage.app",
-      messagingSenderId: "346823563530",
-      appId: "1:346823563530:web:f66013f5d7b730810a02f3",
-      measurementId: "G-PD2P5F6JRR",
-    ),
-  );
+  await Firebase.initializeApp();
 
   SharedPreferences prefs = await SharedPreferences.getInstance();
   bool seen = prefs.getBool('seenOnboarding') ?? false;

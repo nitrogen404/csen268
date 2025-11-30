@@ -6,18 +6,19 @@ class ToastNotificationService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   final List<StreamSubscription> _subscriptions = [];
+  String? _currentChainId;
 
+  /// Called by ChainDetailPage to mark which chain is currently open.
+  void setCurrentChain(String? chainId) {
+    _currentChainId = chainId;
+  }
+
+  /// Begin listening for new messages on the given chain IDs.
   void startListening(List<String> chainIds) {
-    // Clear previous listeners
-    for (var sub in _subscriptions) {
-      sub.cancel();
-    }
-    _subscriptions.clear();
+    _clearSubscriptions();
 
-    // If no chains, do nothing
     if (chainIds.isEmpty) return;
 
-    // Listen to each chain for new messages
     for (final id in chainIds) {
       final sub = _firestore
           .collection('chains')
@@ -28,6 +29,11 @@ class ToastNotificationService {
           .snapshots()
           .listen((snapshot) {
         if (snapshot.docs.isEmpty) return;
+
+        // Do not show toast for the chain currently open in the detail page.
+        if (_currentChainId != null && _currentChainId == id) {
+          return;
+        }
 
         final data = snapshot.docs.first.data();
         final sender = data['senderName'] ?? 'User';
@@ -41,6 +47,8 @@ class ToastNotificationService {
   }
 
   void _showToast(String sender, String text) {
+    if (text.trim().isEmpty) return;
+
     Fluttertoast.showToast(
       msg: '$sender: $text',
       toastLength: Toast.LENGTH_SHORT,
@@ -48,7 +56,17 @@ class ToastNotificationService {
     );
   }
 
+  /// Used by RootShell dispose to stop listening.
+  void stopListening() {
+    _clearSubscriptions();
+  }
+
+  /// Optional: same as stopListening, if you call dispose() instead.
   void dispose() {
+    _clearSubscriptions();
+  }
+
+  void _clearSubscriptions() {
     for (var s in _subscriptions) {
       s.cancel();
     }
