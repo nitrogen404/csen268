@@ -11,50 +11,49 @@ class MessageService {
     required String text,
     String? imageUrl,
   }) async {
-    try {
-      await _firestore.collection('messages').add({
-        'chainId': chainId,
-        'senderId': senderId,
-        'senderName': senderName,
-        'text': text,
-        'imageUrl': imageUrl,
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      throw 'Failed to send message: $e';
-    }
+    final ref = _firestore
+        .collection('chains')
+        .doc(chainId)
+        .collection('messages')
+        .doc();
+
+    await ref.set({
+      'chainId': chainId,
+      'senderId': senderId,
+      'senderName': senderName,
+      'text': text,
+      'imageUrl': imageUrl,
+      'timestamp': FieldValue.serverTimestamp(),
+    });
   }
 
   Stream<List<Message>> getChainMessages(String chainId) {
     return _firestore
+        .collection('chains')
+        .doc(chainId)
         .collection('messages')
-        .where('chainId', isEqualTo: chainId)
         .orderBy('timestamp', descending: false)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => Message.fromFirestore(doc))
-          .toList();
+      return snapshot.docs.map((doc) => Message.fromFirestore(doc)).toList();
     });
   }
 
-  Future<void> deleteMessage(String messageId) async {
-    try {
-      await _firestore.collection('messages').doc(messageId).delete();
-    } catch (e) {
-      throw 'Failed to delete message: $e';
-    }
+  Future<void> deleteMessage(String chainId, String messageId) async {
+    await _firestore
+        .collection('chains')
+        .doc(chainId)
+        .collection('messages')
+        .doc(messageId)
+        .delete();
   }
 
   Future<int> getMessageCount(String chainId) async {
-    try {
-      final snapshot = await _firestore
-          .collection('messages')
-          .where('chainId', isEqualTo: chainId)
-          .get();
-      return snapshot.docs.length;
-    } catch (e) {
-      return 0;
-    }
+    final snapshot = await _firestore
+        .collection('chains')
+        .doc(chainId)
+        .collection('messages')
+        .get();
+    return snapshot.docs.length;
   }
 }

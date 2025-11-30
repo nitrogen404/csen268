@@ -6,7 +6,6 @@ import '../services/auth_service.dart';
 import '../services/user_service.dart';
 import 'edit_profile_page.dart';
 
-// --- Main Profile Page Widget ---
 class ProfilePage extends StatefulWidget {
   const ProfilePage({Key? key}) : super(key: key);
 
@@ -17,15 +16,6 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   final _authService = AuthService();
   final _userService = UserService();
-
-  final List<Activity> _activities = const [
-    Activity('Completed Daily Reading', '2 hours ago', Icons.accessibility_new,
-        AppColors.statCheckIns),
-    Activity('Joined Morning Workout chain', 'Yesterday',
-        Icons.people_alt_outlined, AppColors.statTotalChains),
-    Activity('Achieved 10-day streak 🥳', '2 days ago',
-        Icons.local_fire_department, AppColors.statLongestStreak),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -64,23 +54,19 @@ class _ProfilePageState extends State<ProfilePage> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Text(
-                'Failed to load profile',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            );
+          if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.exists) {
+            return const Center(child: Text('Failed to load profile'));
           }
 
-          final data = snapshot.data?.data() ?? {};
+          final data =
+              snapshot.data!.data() ?? <String, dynamic>{};
 
           final displayName =
-              (data['displayName'] as String?) ?? user.email ?? 'TaskChain User';
-          final email = (data['email'] as String?) ?? user.email ?? '';
-          final isPremium = (data['isPremium'] as bool?) ?? false;
+              data['displayName'] as String? ?? user.email ?? 'TaskChain User';
+          final email =
+              data['email'] as String? ?? user.email ?? '';
+          final isPremium = data['isPremium'] as bool? ?? false;
 
-          // Stats: use stored values if present, otherwise fall back to defaults
           final totalChains = (data['totalChains'] ?? 0).toString();
           final longestStreak = (data['longestStreak'] ?? 0).toString();
           final checkIns = (data['checkIns'] ?? 0).toString();
@@ -90,32 +76,47 @@ class _ProfilePageState extends State<ProfilePage> {
 
           final stats = [
             ProfileStat(
-                totalChains, 'Total Chains', Icons.people_alt, AppColors.statTotalChains),
-            ProfileStat(longestStreak, 'Longest Streak',
-                Icons.local_fire_department, AppColors.statLongestStreak),
-            ProfileStat(checkIns, 'Check-ins', Icons.calendar_today,
-                AppColors.statCheckIns),
-            ProfileStat(successRate, 'Success Rate', Icons.trending_up,
-                AppColors.statSuccessRate),
+              totalChains,
+              'Total Chains',
+              Icons.people_alt,
+              AppColors.statTotalChains,
+            ),
+            ProfileStat(
+              longestStreak,
+              'Longest Streak',
+              Icons.local_fire_department,
+              AppColors.statLongestStreak,
+            ),
+            ProfileStat(
+              checkIns,
+              'Check-ins',
+              Icons.calendar_today,
+              AppColors.statCheckIns,
+            ),
+            ProfileStat(
+              successRate,
+              'Success Rate',
+              Icons.trending_up,
+              AppColors.statSuccessRate,
+            ),
           ];
+
+          final longestStreakValue = int.tryParse(longestStreak) ?? 0;
 
           return SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // HEADER SECTION - Custom gradient header
                 _ProfileHeader(
                   displayName: displayName,
                   email: email,
                   isPremium: isPremium,
                 ),
 
-            const SizedBox(height: 20),
+                const SizedBox(height: 20),
 
-                // 2x2 STAT GRID
                 _StatGrid(stats: stats),
 
-                // CURRENT STREAK CARD (placeholder driven by longestStreak)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
                   child: Card(
@@ -125,60 +126,79 @@ class _ProfilePageState extends State<ProfilePage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            mainAxisAlignment:
+                                MainAxisAlignment.spaceBetween,
                             children: [
                               Row(
                                 children: const [
-                                  Icon(Icons.local_fire_department,
-                                      color: AppColors.statLongestStreak,
-                                      size: 20),
+                                  Icon(
+                                    Icons.local_fire_department,
+                                    color: AppColors.statLongestStreak,
+                                    size: 20,
+                                  ),
                                   SizedBox(width: 8),
-                                  Text('Current Streak',
-                                      style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold)),
+                                  Text(
+                                    'Current Streak',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                                 ],
                               ),
-                              Text(longestStreak,
-                                  style: const TextStyle(
-                                      fontSize: 32,
-                                      fontWeight: FontWeight.bold)),
+                              Text(
+                                longestStreak,
+                                style: const TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ],
                           ),
-                          const Text('Keep it going!',
-                              style: TextStyle(color: Colors.grey)),
+                          const Text(
+                            'Keep it going.',
+                            style: TextStyle(color: Colors.grey),
+                          ),
                           const SizedBox(height: 10),
-                          // Progress Bar - simple visual placeholder
                           ClipRRect(
                             borderRadius: BorderRadius.circular(4.0),
                             child: LinearProgressIndicator(
-                              value: (int.tryParse(longestStreak) ?? 0) / 30.0,
+                              value: longestStreakValue / 30.0,
                               minHeight: 8,
                               backgroundColor: Theme.of(context)
                                   .colorScheme
                                   .surfaceVariant,
-                              valueColor: const AlwaysStoppedAnimation<Color>(
-                                  AppColors.statLongestStreak),
+                              valueColor:
+                                  const AlwaysStoppedAnimation<Color>(
+                                AppColors.statLongestStreak,
+                              ),
                             ),
                           ),
                           const SizedBox(height: 8),
                           const Text(
-                              'Stay consistent to beat your longest streak!',
-                              style: TextStyle(
-                                  fontSize: 12, color: Colors.grey)),
+                            'Stay consistent to beat your longest streak.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
                         ],
                       ),
                     ),
                   ),
                 ),
 
-                // RECENT ACTIVITY (from Firestore)
                 const Padding(
                   padding: EdgeInsets.fromLTRB(20, 10, 20, 10),
-                  child: Text('Recent Activity',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  child: Text(
+                    'Recent Activity',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
+
                 StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                   stream: FirebaseFirestore.instance
                       .collection('users')
@@ -188,10 +208,13 @@ class _ProfilePageState extends State<ProfilePage> {
                       .limit(10)
                       .snapshots(),
                   builder: (context, snap) {
-                    if (snap.connectionState == ConnectionState.waiting) {
+                    if (snap.connectionState ==
+                        ConnectionState.waiting) {
                       return const Padding(
                         padding: EdgeInsets.all(16.0),
-                        child: Center(child: CircularProgressIndicator()),
+                        child: Center(
+                          child: CircularProgressIndicator(),
+                        ),
                       );
                     }
                     if (snap.hasError) {
@@ -203,6 +226,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                       );
                     }
+
                     final docs = snap.data?.docs ?? [];
                     if (docs.isEmpty) {
                       return const Padding(
@@ -213,14 +237,16 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                       );
                     }
+
                     return Column(
                       children: docs.map((d) {
                         final data = d.data();
-                        final desc =
-                            data['description'] as String? ?? 'Completed activity';
+                        final desc = data['description'] as String? ??
+                            'Completed activity';
                         final chainTitle =
                             data['chainTitle'] as String? ?? '';
                         final ts = data['timestamp'] as Timestamp?;
+
                         String when = '';
                         if (ts != null) {
                           final dt = ts.toDate();
@@ -228,18 +254,25 @@ class _ProfilePageState extends State<ProfilePage> {
                               '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} '
                               '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
                         }
+
                         return ListTile(
                           leading: CircleAvatar(
                             backgroundColor:
                                 AppColors.statCheckIns.withOpacity(0.1),
-                            child: const Icon(Icons.check_circle,
-                                color: AppColors.statCheckIns),
+                            child: const Icon(
+                              Icons.check_circle,
+                              color: AppColors.statCheckIns,
+                            ),
                           ),
-                          title: Text(desc,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w500)),
+                          title: Text(
+                            desc,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w500),
+                          ),
                           subtitle: Text(
-                            chainTitle.isNotEmpty ? '$chainTitle • $when' : when,
+                            chainTitle.isNotEmpty
+                                ? '$chainTitle • $when'
+                                : when,
                           ),
                         );
                       }).toList(),
@@ -247,14 +280,17 @@ class _ProfilePageState extends State<ProfilePage> {
                   },
                 ),
 
-                // PREMIUM CARD (driven by isPremium flag)
-                Container(
+                Container
+(
                   width: double.infinity,
                   margin: const EdgeInsets.all(16.0),
                   padding: const EdgeInsets.all(30.0),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [AppColors.primaryPurple, AppColors.accentPurple],
+                      colors: [
+                        AppColors.primaryPurple,
+                        AppColors.accentPurple,
+                      ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
@@ -262,23 +298,29 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   child: Column(
                     children: [
-                      const Icon(Icons.workspace_premium,
-                          color: Colors.white, size: 40),
+                      const Icon(
+                        Icons.workspace_premium,
+                        color: Colors.white,
+                        size: 40,
+                      ),
                       const SizedBox(height: 10),
                       Text(
-                        isPremium ? 'Already Premium!' : 'Go Premium',
+                        isPremium ? 'Already Premium' : 'Go Premium',
                         style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold),
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 5),
                       Text(
                         isPremium
-                            ? 'Thank you for supporting TaskChain'
-                            : 'Unlock more insights and features',
+                            ? 'Thank you for supporting TaskChain.'
+                            : 'Unlock more insights and features.',
                         style: const TextStyle(
-                            color: Colors.white70, fontSize: 14),
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
                       ),
                       const SizedBox(height: 15),
                       ElevatedButton(
@@ -287,23 +329,26 @@ class _ProfilePageState extends State<ProfilePage> {
                           backgroundColor: Colors.white,
                           foregroundColor: AppColors.primaryPurple,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20)),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 30, vertical: 12),
+                            horizontal: 30,
+                            vertical: 12,
+                          ),
                         ),
                         child: Text(
                           isPremium
                               ? 'Manage Subscription'
                               : 'Upgrade to Premium',
-                          style:
-                              const TextStyle(fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
 
-                // Padding for the floating nav bar
                 const SizedBox(height: 100),
               ],
             ),
@@ -313,7 +358,6 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 }
-
 
 class _ProfileHeader extends StatelessWidget {
   final String displayName;
@@ -338,15 +382,19 @@ class _ProfileHeader extends StatelessWidget {
         initials = parts.first.substring(0, 1).toUpperCase();
       } else {
         initials =
-            (parts.first.substring(0, 1) + parts.last.substring(0, 1)).toUpperCase();
+            (parts.first.substring(0, 1) + parts.last.substring(0, 1))
+                .toUpperCase();
       }
     }
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 60, 20, 30), 
-      decoration: const BoxDecoration( 
+      padding: const EdgeInsets.fromLTRB(20, 60, 20, 30),
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [AppColors.primaryPurple, AppColors.accentPurple],
+          colors: [
+            AppColors.primaryPurple,
+            AppColors.accentPurple,
+          ],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -387,17 +435,20 @@ class _ProfileHeader extends StatelessWidget {
               Text(
                 initials,
                 style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold),
+                  color: Colors.white,
+                  fontSize: 32,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 10),
           Text(
             displayName,
-            style: textTheme.headlineSmall
-                ?.copyWith(color: Colors.white, fontWeight: FontWeight.w700),
+            style: textTheme.headlineSmall?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 8),
           Container(
@@ -407,8 +458,11 @@ class _ProfileHeader extends StatelessWidget {
               borderRadius: BorderRadius.circular(15),
             ),
             child: Text(
-              isPremium ? '👑 Premium Member' : 'Free Member',
-              style: textTheme.labelLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.w600),
+              isPremium ? 'Premium Member' : 'Free Member',
+              style: textTheme.labelLarge?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -419,6 +473,7 @@ class _ProfileHeader extends StatelessWidget {
 
 class _StatGrid extends StatelessWidget {
   final List<ProfileStat> stats;
+
   const _StatGrid({required this.stats});
 
   @override

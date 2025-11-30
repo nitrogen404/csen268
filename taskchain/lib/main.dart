@@ -13,14 +13,12 @@ import 'pages/sign_in_page.dart';
 import 'pages/sign_up_page.dart';
 import 'pages/onboarding_page.dart';
 import 'services/toast_notification_service.dart';
+import 'services/chain_service.dart';
 
 final ValueNotifier<int> navIndex = ValueNotifier<int>(0);
 
-// Main class
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
   await Firebase.initializeApp();
 
   SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -42,8 +40,6 @@ class ChainzApp extends StatelessWidget {
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),
       themeMode: ThemeMode.system,
-
-      // Listens to authentication state and routes user accordingly
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
         builder: (context, snapshot) {
@@ -51,14 +47,11 @@ class ChainzApp extends StatelessWidget {
             return const SizedBox.shrink();
           }
           if (!snapshot.hasData) {
-            return showOnboarding
-                ? const OnboardingPage()
-                : const SignInPage();
+            return showOnboarding ? const OnboardingPage() : const SignInPage();
           }
           return const RootShell();
         },
       ),
-
       routes: {
         '/onboarding': (_) => const OnboardingPage(),
         '/login': (_) => const SignInPage(),
@@ -87,8 +80,12 @@ class _RootShellState extends State<RootShell> {
   void initState() {
     super.initState();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _toastService.startListening(['chain_1', 'chain_2', 'chain_3']);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        final chainIds = await ChainService().getJoinedChainIds(uid);
+        _toastService.startListening(chainIds);
+      }
     });
 
     navIndex.addListener(_onNavIndexChanged);

@@ -19,26 +19,12 @@ class Message {
     required this.timestamp,
   });
 
-  Map<String, dynamic> toMap() {
-    return {
-      'chainId': chainId,
-      'senderId': senderId,
-      'senderName': senderName,
-      'text': text,
-      'imageUrl': imageUrl,
-      'timestamp': Timestamp.fromDate(timestamp),
-    };
-  }
-
   factory Message.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+    final data = doc.data() as Map<String, dynamic>? ?? {};
 
-    DateTime messageTime;
-    if (data['timestamp'] != null) {
-      messageTime = (data['timestamp'] as Timestamp).toDate();
-    } else {
-      messageTime = DateTime.now();
-    }
+    final ts = data['timestamp'];
+    final DateTime time =
+        ts is Timestamp ? ts.toDate() : DateTime.now();
 
     return Message(
       id: doc.id,
@@ -46,27 +32,8 @@ class Message {
       senderId: data['senderId'] ?? '',
       senderName: data['senderName'] ?? 'Unknown',
       text: data['text'] ?? '',
-      imageUrl: data['imageUrl'], // NOW SUPPORTED
-      timestamp: messageTime,
-    );
-  }
-
-  factory Message.fromMap(Map<String, dynamic> map, String id) {
-    DateTime messageTime;
-    if (map['timestamp'] != null) {
-      messageTime = (map['timestamp'] as Timestamp).toDate();
-    } else {
-      messageTime = DateTime.now();
-    }
-
-    return Message(
-      id: id,
-      chainId: map['chainId'] ?? '',
-      senderId: map['senderId'] ?? '',
-      senderName: map['senderName'] ?? 'Unknown',
-      text: map['text'] ?? '',
-      imageUrl: map['imageUrl'], // NOW SUPPORTED
-      timestamp: messageTime,
+      imageUrl: data['imageUrl'],
+      timestamp: time,
     );
   }
 }

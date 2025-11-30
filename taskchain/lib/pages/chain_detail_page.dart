@@ -42,6 +42,9 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
 
+  // Cache for user display names
+  final Map<String, String> _nameCache = {};
+
   @override
   void initState() {
     super.initState();
@@ -64,16 +67,36 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     }
   }
 
+  Future<String> _getSenderName(String uid) async {
+    if (_nameCache.containsKey(uid)) {
+      return _nameCache[uid]!;
+    }
+
+    final snap =
+        await FirebaseFirestore.instance.collection('users').doc(uid).get();
+    final name = snap.data()?['displayName'] ?? 'Unknown';
+
+    _nameCache[uid] = name;
+    return name;
+  }
+
+  Future<String> _getMyDisplayName() async {
+    final uid = _authService.currentUser!.uid;
+    return _getSenderName(uid);
+  }
+
   Future<void> _sendMessage() async {
     if (_messageController.text.trim().isEmpty) return;
 
     final user = _authService.currentUser;
     if (user == null) return;
 
+    final senderName = await _getMyDisplayName();
+
     await _messageService.sendMessage(
       chainId: widget.chainId,
       senderId: user.uid,
-      senderName: user.email?.split('@')[0] ?? 'User',
+      senderName: senderName,
       text: _messageController.text.trim(),
       imageUrl: null,
     );
@@ -98,14 +121,16 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
         "chat_images/${widget.chainId}/${DateTime.now().millisecondsSinceEpoch}.jpg";
 
     final ref = FirebaseStorage.instance.ref().child(storagePath);
-
     await ref.putFile(file);
+
     final downloadUrl = await ref.getDownloadURL();
+
+    final senderName = await _getMyDisplayName();
 
     await _messageService.sendMessage(
       chainId: widget.chainId,
       senderId: user.uid,
-      senderName: user.email?.split('@')[0] ?? 'User',
+      senderName: senderName,
       text: "",
       imageUrl: downloadUrl,
     );
@@ -114,7 +139,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   }
 
   void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 120), () {
+    Future.delayed(const Duration(milliseconds: 150), () {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           _scrollController.position.maxScrollExtent,
@@ -297,7 +322,14 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
             itemBuilder: (context, index) {
               final m = messages[index];
               final isMe = m.senderId == _authService.currentUser!.uid;
-              return _buildMessageBubble(m, isMe);
+
+              return FutureBuilder<String>(
+                future: _getSenderName(m.senderId),
+                builder: (context, nameSnap) {
+                  final senderName = nameSnap.data ?? m.senderName;
+                  return _buildMessageBubble(m, senderName, isMe);
+                },
+              );
             },
           );
         },
@@ -322,7 +354,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     );
   }
 
-  Widget _buildMessageBubble(Message msg, bool isMe) {
+  Widget _buildMessageBubble(Message msg, String senderName, bool isMe) {
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -343,22 +375,19 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (!isMe)
-              Text(msg.senderName,
+              Text(senderName,
                   style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 12,
                       color: Colors.deepPurple)),
             if (!isMe) const SizedBox(height: 4),
-
             if (msg.imageUrl != null)
               ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: Image.network(msg.imageUrl!, fit: BoxFit.cover),
               ),
-
             if (msg.imageUrl != null && msg.text.isNotEmpty)
               const SizedBox(height: 8),
-
             if (msg.text.isNotEmpty)
               Text(
                 msg.text,
@@ -367,7 +396,6 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                   fontSize: 15,
                 ),
               ),
-
             const SizedBox(height: 4),
             Text(
               _formatTime(msg.timestamp),

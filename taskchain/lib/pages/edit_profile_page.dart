@@ -15,9 +15,26 @@ class _EditProfilePageState extends State<EditProfilePage> {
   final _emailController = TextEditingController();
   final _bioController = TextEditingController();
   final _locationController = TextEditingController();
+
   final _authService = AuthService();
   final _userService = UserService();
+
   bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _bioController.dispose();
+    _locationController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,119 +50,151 @@ class _EditProfilePageState extends State<EditProfilePage> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : Form(
-          key: _formKey,
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              // PERSONAL INFO SECTION
-              _sectionCard(
-                title: "Personal Information",
-                child: Column(
+                key: _formKey,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
                   children: [
-                    _textField("Full Name", _nameController),
-                    const SizedBox(height: 12),
-                    _textField("Email", _emailController, keyboardType: TextInputType.emailAddress),
-                    const SizedBox(height: 12),
-                    _textField(
-                      "Bio",
-                      _bioController,
-                      maxLines: 3,
-                      showCounter: true,
-                      maxLength: 150,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              // LOCATION SECTION
-              _sectionCard(
-                title: "Location",
-                child: _textField("City, State/Country", _locationController),
-              ),
-              const SizedBox(height: 16),
-              // ACCOUNT INFO SECTION
-              _sectionCard(
-                title: "Account Information",
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text(
-                      "Member Since",
-                      style: TextStyle(color: Colors.grey, fontSize: 14),
-                    ),
-                    SizedBox(height: 6),
-                    Text(
-                      "Account creation date cannot be changed",
-                      style: TextStyle(color: Colors.black54, fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 40),
-              // ACTION BUTTONS
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        side: BorderSide(color: Colors.grey.shade300),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text(
-                        "Cancel",
-                        style: TextStyle(color: Colors.black87),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        backgroundColor: Colors.transparent,
-                        shadowColor: Colors.transparent,
-                      ).copyWith(
-                        backgroundColor: WidgetStateProperty.all(Colors.transparent),
-                      ),
-                      onPressed: _saveChanges,
-                      child: Ink(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Color(0xFF9C27F0), Color(0xFF7E4DF9)],
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
+                    _sectionCard(
+                      title: "Personal Information",
+                      child: Column(
+                        children: [
+                          _textField("Full Name", _nameController),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _emailController,
+                            readOnly: true,
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: InputDecoration(
+                              labelText: "Email",
+                              labelStyle:
+                                  const TextStyle(color: Colors.grey),
+                              filled: true,
+                              fillColor: const Color(0xFFF7F5FB),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 14, horizontal: 14),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide:
+                                    BorderSide(color: Colors.grey.shade200),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide:
+                                    BorderSide(color: Colors.grey.shade200),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide:
+                                    const BorderSide(color: Color(0xFF9C27F0)),
+                              ),
+                            ),
                           ),
-                          borderRadius: BorderRadius.all(Radius.circular(12)),
-                        ),
-                        child: Container(
-                          alignment: Alignment.center,
-                          height: 48,
-                          child: const Text(
-                            "Save Changes",
+                          const SizedBox(height: 12),
+                          _textField(
+                            "Bio",
+                            _bioController,
+                            maxLines: 3,
+                            showCounter: true,
+                            maxLength: 150,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _sectionCard(
+                      title: "Location",
+                      child:
+                          _textField("City, State/Country", _locationController),
+                    ),
+                    const SizedBox(height: 16),
+                    _sectionCard(
+                      title: "Account Information",
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text(
+                            "Member Since",
+                            style:
+                                TextStyle(color: Colors.grey, fontSize: 14),
+                          ),
+                          SizedBox(height: 6),
+                          Text(
+                            "Account creation date cannot be changed",
                             style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 16),
+                                color: Colors.black54, fontSize: 13),
                           ),
-                        ),
+                        ],
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 40),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 14),
+                              side: BorderSide(color: Colors.grey.shade300),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text(
+                              "Cancel",
+                              style: TextStyle(color: Colors.black87),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                            ).copyWith(
+                              backgroundColor:
+                                  WidgetStateProperty.all(Colors.transparent),
+                            ),
+                            onPressed: _saveChanges,
+                            child: Ink(
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    Color(0xFF9C27F0),
+                                    Color(0xFF7E4DF9)
+                                  ],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ),
+                                borderRadius:
+                                    BorderRadius.all(Radius.circular(12)),
+                              ),
+                              child: Container(
+                                alignment: Alignment.center,
+                                height: 48,
+                                child: const Text(
+                                  "Save Changes",
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 16),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ],
-          ),
-        ),
       ),
     );
   }
-
-  // -------------- UI HELPERS --------------
 
   Widget _sectionCard({required String title, required Widget child}) {
     return Container(
@@ -228,7 +277,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _userService.updateProfile(
       userId: user.uid,
       displayName: _nameController.text.trim(),
-      email: _emailController.text.trim(),
       bio: _bioController.text.trim(),
       location: _locationController.text.trim(),
     );
@@ -237,12 +285,6 @@ class _EditProfilePageState extends State<EditProfilePage> {
       const SnackBar(content: Text("Profile updated successfully")),
     );
     Navigator.pop(context);
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _loadProfile();
   }
 
   Future<void> _loadProfile() async {
@@ -254,15 +296,16 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
     try {
       final doc = await _userService.getUserProfile(user.uid);
-      final data = doc.data() ?? {};
+      final data = (doc.data() ?? <String, dynamic>{});
+
       _nameController.text =
-          (data['displayName'] as String?) ?? (user.email ?? 'TaskChain User');
-      _emailController.text =
-          (data['email'] as String?) ?? (user.email ?? '');
-      _bioController.text = (data['bio'] as String?) ?? '';
-      _locationController.text = (data['location'] as String?) ?? '';
+          data['displayName'] as String? ?? (user.email ?? 'TaskChain User');
+
+      _emailController.text = user.email ?? '';
+
+      _bioController.text = data['bio'] as String? ?? '';
+      _locationController.text = data['location'] as String? ?? '';
     } catch (_) {
-      // ignore, just fall back to defaults
     } finally {
       if (mounted) {
         setState(() => _loading = false);
@@ -270,4 +313,3 @@ class _EditProfilePageState extends State<EditProfilePage> {
     }
   }
 }
-

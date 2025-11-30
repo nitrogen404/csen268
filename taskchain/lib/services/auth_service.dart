@@ -1,71 +1,104 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Get current user
   User? get currentUser => _auth.currentUser;
 
-  // Auth state changes stream
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  // Sign in with email and password
   Future<UserCredential?> signInWithEmailAndPassword({
     required String email,
     required String password,
   }) async {
     try {
-      UserCredential userCredential = await _auth.signInWithEmailAndPassword(
+      final credential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
-      return userCredential;
+
+      // Ensure user profile exists
+      await _ensureUserProfile(credential.user);
+
+      return credential;
     } on FirebaseAuthException catch (e) {
       throw _handleAuthException(e);
-    } catch (e) {
+    } catch (_) {
       throw 'An error occurred. Please try again.';
     }
   }
 
-  // Sign up with email and password
   Future<UserCredential?> signUpWithEmailAndPassword({
     required String email,
     required String password,
   }) async {
     try {
-      UserCredential userCredential = await _auth.createUserWithEmailAndPassword(
+      final credential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
-      return userCredential;
+
+      // Create user profile immediately
+      await _createUserProfile(credential.user);
+
+      return credential;
     } on FirebaseAuthException catch (e) {
       throw _handleAuthException(e);
-    } catch (e) {
+    } catch (_) {
       throw 'An error occurred. Please try again.';
     }
   }
 
-  // Sign out
   Future<void> signOut() async {
     try {
       await _auth.signOut();
-    } catch (e) {
+    } catch (_) {
       throw 'Error signing out. Please try again.';
     }
   }
 
-  // Reset password
   Future<void> resetPassword(String email) async {
     try {
       await _auth.sendPasswordResetEmail(email: email);
     } on FirebaseAuthException catch (e) {
       throw _handleAuthException(e);
-    } catch (e) {
+    } catch (_) {
       throw 'An error occurred. Please try again.';
     }
   }
 
-  // Handle Firebase Auth exceptions
+  Future<void> _ensureUserProfile(User? user) async {
+    if (user == null) return;
+
+    final docRef = _firestore.collection('users').doc(user.uid);
+    final doc = await docRef.get();
+
+    if (doc.exists) return;
+
+    await _createUserProfile(user);
+  }
+
+  Future<void> _createUserProfile(User? user) async {
+    if (user == null) return;
+
+    final email = user.email ?? '';
+    final defaultName = email.isNotEmpty ? email.split('@').first : 'User';
+
+    await _firestore.collection('users').doc(user.uid).set({
+      'displayName': defaultName,
+      'email': email,
+      'bio': '',
+      'location': '',
+      'totalChains': 0,
+      'longestStreak': 0,
+      'checkIns': 0,
+      'successRate': 0,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   String _handleAuthException(FirebaseAuthException e) {
     switch (e.code) {
       case 'user-not-found':
@@ -89,4 +122,3 @@ class AuthService {
     }
   }
 }
-
