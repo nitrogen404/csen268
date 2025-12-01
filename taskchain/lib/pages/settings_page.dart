@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
 import '../services/auth_service.dart';
 import '../pages/sign_in_page.dart';
+import '../cubits/settings_cubit.dart';
+import '../models/app_settings.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({Key? key}) : super(key: key);
@@ -10,147 +14,197 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  bool dailyReminders = true;
-  bool groupActivity = true;
-  bool achievements = true;
-  bool darkMode = false;
-
   final AuthService _authService = AuthService();
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
+    return BlocBuilder<SettingsCubit, SettingsState>(
+      builder: (context, state) {
+        final AppSettings settings =
+            state.settings ?? const AppSettings();
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: const Text("Settings", style: TextStyle(color: Colors.black)),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-      ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        children: [
-          _sectionHeader("NOTIFICATIONS"),
-
-          _toggleTile(
-            icon: Icons.notifications_active_outlined,
-            title: "Daily Reminders",
-            subtitle: "Get notified to check in",
-            value: dailyReminders,
-            onChanged: (v) => setState(() => dailyReminders = v),
+        return Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            title: const Text("Settings", style: TextStyle(color: Colors.black)),
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black,
+            elevation: 0,
           ),
-          _toggleTile(
-            icon: Icons.group_outlined,
-            title: "Group Activity",
-            subtitle: "When teammates check in",
-            value: groupActivity,
-            onChanged: (v) => setState(() => groupActivity = v),
-          ),
-          _toggleTile(
-            icon: Icons.emoji_events_outlined,
-            title: "Achievements",
-            subtitle: "When you earn badges",
-            value: achievements,
-            onChanged: (v) => setState(() => achievements = v),
-          ),
+          body: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            children: [
+              _sectionHeader("NOTIFICATIONS"),
 
-          const SizedBox(height: 8),
-          _sectionDivider(),
-
-          _sectionHeader("PREFERENCES"),
-
-          _toggleTile(
-            icon: Icons.dark_mode_outlined,
-            title: "Dark Mode",
-            subtitle: "Switch to dark theme",
-            value: darkMode,
-            onChanged: (v) => setState(() => darkMode = v),
-          ),
-
-          ListTile(
-            leading: const Icon(Icons.language_outlined, color: Colors.green),
-            title: const Text("Language",
-                style: TextStyle(fontWeight: FontWeight.w500, color: Colors.black)),
-            subtitle: const Text("English", style: TextStyle(color: Colors.black87)),
-            trailing: const Text("Change", style: TextStyle(color: Colors.blue)),
-            onTap: () {},
-          ),
-
-          const SizedBox(height: 8),
-          _sectionDivider(),
-
-          _sectionHeader("SUPPORT & ABOUT"),
-
-          _cardTile(
-            icon: Icons.help_outline,
-            color: Colors.blueAccent,
-            title: "Help & Support",
-            subtitle: "Get help with TaskChain",
-            onTap: () {},
-          ),
-          _cardTile(
-            icon: Icons.privacy_tip_outlined,
-            color: Colors.green,
-            title: "Privacy Policy",
-            subtitle: "How we protect your data",
-            onTap: () {},
-          ),
-          _cardTile(
-            icon: Icons.info_outline,
-            color: Colors.grey,
-            title: "About TaskChain",
-            subtitle: "Version 1.0.0",
-            onTap: () {},
-          ),
-
-          const SizedBox(height: 8),
-          _sectionDivider(),
-
-          _sectionHeader("ACCOUNT"),
-
-          GestureDetector(
-            onTap: () {
-              _showSignOutDialog(context);
-            },
-            child: Container(
-              margin: const EdgeInsets.symmetric(vertical: 8),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.redAccent.withOpacity(0.3)),
+              _toggleTile(
+                icon: Icons.notifications_active_outlined,
+                title: "Notifications",
+                subtitle: "Enable app notifications",
+                value: settings.notificationsEnabled,
+                onChanged: (v) => context
+                    .read<SettingsCubit>()
+                    .toggleNotifications(v),
               ),
-              child: Row(
-                children: [
-                  const Icon(Icons.logout, color: Colors.redAccent),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text(
-                          "Sign Out",
-                          style: TextStyle(
-                            color: Colors.redAccent,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          "Log out of your account",
-                          style: TextStyle(color: Colors.black54, fontSize: 13),
-                        ),
-                      ],
+              _toggleTile(
+                icon: Icons.alarm_outlined,
+                title: "Daily Reminders",
+                subtitle: "Get notified to check in",
+                value: settings.remindersEnabled,
+                onChanged: (v) => context
+                    .read<SettingsCubit>()
+                    .toggleReminders(v),
+              ),
+
+              const SizedBox(height: 8),
+              _sectionDivider(),
+
+              _sectionHeader("PREFERENCES"),
+
+              ListTile(
+                leading:
+                    const Icon(Icons.dark_mode_outlined, color: Colors.deepPurple),
+                title: const Text("Theme",
+                    style: TextStyle(
+                        fontWeight: FontWeight.w500, color: Colors.black)),
+                subtitle: Text(
+                  settings.darkMode == 'dark'
+                      ? 'Dark'
+                      : settings.darkMode == 'light'
+                          ? 'Light'
+                          : 'System',
+                  style: const TextStyle(color: Colors.black87),
+                ),
+                trailing: DropdownButton<String>(
+                  value: settings.darkMode,
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'system',
+                      child: Text('System'),
                     ),
-                  ),
-                ],
+                    DropdownMenuItem(
+                      value: 'light',
+                      child: Text('Light'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'dark',
+                      child: Text('Dark'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      context.read<SettingsCubit>().toggleDarkMode(value);
+                    }
+                  },
+                ),
               ),
-            ),
+
+              ListTile(
+                leading:
+                    const Icon(Icons.language_outlined, color: Colors.green),
+                title: const Text("Language",
+                    style: TextStyle(
+                        fontWeight: FontWeight.w500, color: Colors.black)),
+                subtitle: Text(
+                  settings.language.toUpperCase(),
+                  style: const TextStyle(color: Colors.black87),
+                ),
+                trailing: DropdownButton<String>(
+                  value: settings.language,
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'en',
+                      child: Text('English'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'es',
+                      child: Text('Español'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      context.read<SettingsCubit>().setLanguage(value);
+                    }
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 8),
+              _sectionDivider(),
+
+              _sectionHeader("SUPPORT & ABOUT"),
+
+              _cardTile(
+                icon: Icons.help_outline,
+                color: Colors.blueAccent,
+                title: "Help & Support",
+                subtitle: "Get help with TaskChain",
+                onTap: () {},
+              ),
+              _cardTile(
+                icon: Icons.privacy_tip_outlined,
+                color: Colors.green,
+                title: "Privacy Policy",
+                subtitle: "How we protect your data",
+                onTap: () {},
+              ),
+              _cardTile(
+                icon: Icons.info_outline,
+                color: Colors.grey,
+                title: "About TaskChain",
+                subtitle: "Version 1.0.0",
+                onTap: () {},
+              ),
+
+              const SizedBox(height: 8),
+              _sectionDivider(),
+
+              _sectionHeader("ACCOUNT"),
+
+              GestureDetector(
+                onTap: () {
+                  _showSignOutDialog(context);
+                },
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: Colors.redAccent.withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.logout, color: Colors.redAccent),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Sign Out",
+                              style: TextStyle(
+                                color: Colors.redAccent,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              "Log out of your account",
+                              style: TextStyle(
+                                  color: Colors.black54, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:animations/animations.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -14,6 +14,9 @@ import 'pages/sign_up_page.dart';
 import 'pages/onboarding_page.dart';
 import 'services/toast_notification_service.dart';
 import 'services/chain_service.dart';
+import 'repository/settings_repository.dart';
+import 'cubits/settings_cubit.dart';
+import 'models/app_settings.dart';
 
 final ValueNotifier<int> navIndex = ValueNotifier<int>(0);
 
@@ -34,29 +37,70 @@ class ChainzApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Chainz',
-      debugShowCheckedModeBanner: false,
-      theme: buildTheme(Brightness.light),
-      darkTheme: buildTheme(Brightness.dark),
-      themeMode: ThemeMode.system,
-      home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const SizedBox.shrink();
-          }
-          if (!snapshot.hasData) {
-            return showOnboarding ? const OnboardingPage() : const SignInPage();
-          }
-          return const RootShell();
-        },
-      ),
-      routes: {
-        '/onboarding': (_) => const OnboardingPage(),
-        '/login': (_) => const SignInPage(),
-        '/signup': (_) => const SignUpPage(),
-        '/home': (_) => const RootShell(),
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        final user = snapshot.data;
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox.shrink();
+        }
+
+        if (user == null) {
+          return MaterialApp(
+            title: 'Chainz',
+            debugShowCheckedModeBanner: false,
+            theme: buildTheme(Brightness.light),
+            darkTheme: buildTheme(Brightness.dark),
+            themeMode: ThemeMode.system,
+            home: showOnboarding ? const OnboardingPage() : const SignInPage(),
+            routes: {
+              '/onboarding': (_) => const OnboardingPage(),
+              '/login': (_) => const SignInPage(),
+              '/signup': (_) => const SignUpPage(),
+            },
+          );
+        }
+
+        final repo = SettingsRepository();
+
+        return BlocProvider<SettingsCubit>(
+          create: (_) => SettingsCubit(repo, user.uid),
+          child: BlocBuilder<SettingsCubit, SettingsState>(
+            builder: (context, state) {
+              final AppSettings settings =
+                  state.settings ?? const AppSettings();
+
+              ThemeMode themeMode;
+              switch (settings.darkMode) {
+                case 'light':
+                  themeMode = ThemeMode.light;
+                  break;
+                case 'dark':
+                  themeMode = ThemeMode.dark;
+                  break;
+                default:
+                  themeMode = ThemeMode.system;
+              }
+
+              return MaterialApp(
+                title: 'Chainz',
+                debugShowCheckedModeBanner: false,
+                theme: buildTheme(Brightness.light),
+                darkTheme: buildTheme(Brightness.dark),
+                themeMode: themeMode,
+                locale: Locale(settings.language),
+                home: const RootShell(),
+                routes: {
+                  '/onboarding': (_) => const OnboardingPage(),
+                  '/login': (_) => const SignInPage(),
+                  '/signup': (_) => const SignUpPage(),
+                  '/home': (_) => const RootShell(),
+                },
+              );
+            },
+          ),
+        );
       },
     );
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:animations/animations.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import '../widgets/stat_tile.dart';
 import '../widgets/chain_card_with_badge.dart';
 import '../widgets/animated_list_item.dart';
@@ -84,7 +85,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     });
 
     try {
-      await _chainService.joinChainByCode(
+      final joined = await _chainService.joinChainByCode(
         userId: user.uid,
         userEmail: user.email ?? '',
         code: code,
@@ -93,7 +94,11 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       if (!mounted) return;
       _codeController.clear();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Joined chain successfully')),
+        SnackBar(
+          content: Text(
+            joined ? 'Joined chain successfully' : 'You are already a member of this chain.',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -101,6 +106,31 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     } finally {
       if (mounted) setState(() => _isJoining = false);
     }
+  }
+
+  Future<void> _scanAndJoin() async {
+    if (_isJoining) return;
+
+    final user = _authService.currentUser;
+    if (user == null) {
+      setState(() {
+        _joinError = 'Please sign in to join a chain.';
+      });
+      return;
+    }
+
+    final code = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => const _QrScanPage(),
+      ),
+    );
+
+    if (code == null || code.trim().isEmpty) {
+      return;
+    }
+
+    _codeController.text = code.trim();
+    await _joinChain();
   }
 
   @override
@@ -285,6 +315,15 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                             )
                           : const Text('Join'),
                     ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: _scanAndJoin,
+                      style: IconButton.styleFrom(
+                        minimumSize: const Size(48, 48),
+                      ),
+                      icon: const Icon(Icons.qr_code_scanner),
+                      tooltip: 'Scan chain QR',
+                    ),
                   ],
                 ),
 
@@ -458,6 +497,59 @@ class _Achieve extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(subtitle),
+        ],
+      ),
+    );
+  }
+}
+
+class _QrScanPage extends StatefulWidget {
+  const _QrScanPage();
+
+  @override
+  State<_QrScanPage> createState() => _QrScanPageState();
+}
+
+class _QrScanPageState extends State<_QrScanPage> {
+  bool _isProcessed = false;
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_isProcessed) return;
+    final barcodes = capture.barcodes;
+    if (barcodes.isEmpty) return;
+
+    final raw = barcodes.first.rawValue;
+    if (raw == null || raw.trim().isEmpty) return;
+
+    _isProcessed = true;
+    Navigator.of(context).pop(raw.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Scan Chain QR'),
+      ),
+      body: Stack(
+        children: [
+          MobileScanner(
+            onDetect: _onDetect,
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'Point the camera at a TaskChain QR code',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: Colors.white),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
         ],
       ),
     );

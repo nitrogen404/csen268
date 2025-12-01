@@ -130,7 +130,10 @@ class ChainService {
   }
 
   /// Join a chain using a join code.
-  Future<void> joinChainByCode({
+  ///
+  /// Returns `true` if the user was newly added to the chain, and `false`
+  /// if they were already a member (in which case no changes are made).
+  Future<bool> joinChainByCode({
     required String userId,
     required String userEmail,
     required String code,
@@ -161,7 +164,7 @@ class ChainService {
     final existing = await memberDocRef.get();
     if (existing.exists) {
       // Already a member; nothing to do
-      return;
+      return false;
     }
 
     // Add as new member
@@ -185,6 +188,8 @@ class ChainService {
     await userRef.set({
       'email': userEmail,
     }, SetOptions(merge: true));
+
+    return true;
   }
 
   /// Complete today's activity for this user and chain.
