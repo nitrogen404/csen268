@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
@@ -653,13 +654,33 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                   children: [
                     const Icon(Icons.lock_open, size: 18),
                     const SizedBox(width: 8),
-                    Text(
-                      widget.code,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
+                    Expanded(
+                      child: Text(
+                        widget.code,
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy, size: 18),
+                      tooltip: 'Copy code',
+                      onPressed: () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: widget.code),
+                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Chain code copied'),
+                              duration: Duration(seconds: 1),
+                            ),
+                          );
+                        }
+                      },
                     ),
                   ],
                 ),
