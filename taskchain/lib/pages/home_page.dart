@@ -148,32 +148,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 ? _chainService.streamJoinedChains(currentUser.uid)
                 : const Stream.empty(),
             builder: (context, snapshot) {
-              final chains = snapshot.data ?? [];
-              final hasChains = chains.isNotEmpty;
-
-              // Calculate real statistics
-              int totalDays = 0;
-              int uniqueFriendsCount = 0;
-              double avgProgress = 0.0;
-
-              if (hasChains) {
-                // Sum up total days completed across all chains
-                totalDays = chains.fold(0, (sum, chain) => sum + chain.totalDaysCompleted);
-
-                // Count unique friends across all chains (excluding current user)
-                final uniqueFriendIds = <String>{};
-                for (var chain in chains) {
-                  // For now, we'll use memberCount - 1 as an approximation
-                  // since we don't have direct access to all member IDs here
-                  uniqueFriendsCount += chain.memberCount - 1;
-                }
-
-                // Calculate average progress
-                if (chains.isNotEmpty) {
-                  final totalProgress = chains.fold(0.0, (sum, chain) => sum + chain.progress);
-                  avgProgress = totalProgress / chains.length;
-                }
-              }
+              final hasChains = (snapshot.data ?? []).isNotEmpty;
 
               return Container(
                 padding: const EdgeInsets.fromLTRB(20, 60, 20, 24),
@@ -258,27 +233,27 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                     // Only show static stats if user has ≥1 chain
                     if (hasChains)
                       Row(
-                        children: [
+                        children: const [
                           Expanded(
                             child: StatTile(
                               icon: Icons.local_fire_department,
-                              value: totalDays.toString(),
+                              value: "42",
                               label: "Total Days",
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          SizedBox(width: 12),
                           Expanded(
                             child: StatTile(
                               icon: Icons.group,
-                              value: uniqueFriendsCount.toString(),
+                              value: "9",
                               label: "Friends Active",
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          SizedBox(width: 12),
                           Expanded(
                             child: StatTile(
                               icon: Icons.show_chart,
-                              value: "${(avgProgress * 100).toInt()}%",
+                              value: "78%",
                               label: "Avg Progress",
                             ),
                           ),
