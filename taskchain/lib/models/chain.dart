@@ -18,6 +18,8 @@ class Chain {
   final int currentStreak;        // group streak (consecutive days with activity)
   final int totalDaysCompleted;   // number of days the group has completed
 
+  final String theme;
+
   Chain({
     required this.id,
     required this.title,
@@ -30,6 +32,7 @@ class Chain {
     required this.memberCount,
     required this.currentStreak,
     required this.totalDaysCompleted,
+    required this.theme,
   });
 
   factory Chain.fromFirestore(DocumentSnapshot doc) {
@@ -62,6 +65,7 @@ class Chain {
       memberCount: memberCount,
       currentStreak: (data['currentStreak'] ?? 0) as int,
       totalDaysCompleted: completed,
+      theme: data['theme'] ?? 'Ocean',
     );
   }
 
@@ -74,6 +78,7 @@ class Chain {
       'ownerId': ownerId,
       'currentStreak': currentStreak,
       'totalDaysCompleted': totalDaysCompleted,
+      'theme': theme,
       // no need to store `days`, `members`, or `progress` – they are derived
     };
   }

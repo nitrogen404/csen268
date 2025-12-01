@@ -81,6 +81,7 @@ class ChainService {
       memberCount: memberCount,
       currentStreak: currentStreak,
       totalDaysCompleted: totalCompleted,
+      theme: theme,
     );
   }
 

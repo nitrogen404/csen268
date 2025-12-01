@@ -19,6 +19,7 @@ class ChainDetailPage extends StatefulWidget {
   final String members;
   final double progress;
   final String code;
+  final String theme;
 
   const ChainDetailPage({
     super.key,
@@ -27,6 +28,7 @@ class ChainDetailPage extends StatefulWidget {
     required this.members,
     required this.progress,
     required this.code,
+    this.theme = 'Ocean',
   });
 
   @override
@@ -198,36 +200,67 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(widget.chainTitle),
+        title: const Text(''), // Remove title from AppBar
         actions: [
           IconButton(
             icon: const Icon(Icons.group_outlined),
             onPressed: _showMembersSheet,
+            color: Colors.white, // Make icons white to match header
           ),
           IconButton(
             icon: const Icon(Icons.share_outlined),
             onPressed: _showShareSheet,
+            color: Colors.white, // Make icons white to match header
           ),
         ],
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white, // Make back button white
         elevation: 0,
       ),
-      body: Column(
-        children: [
-          _buildHeader(),
-          _buildCompleteButton(),
-          _buildChatHeader(),
-          _buildMessageList(),
-          _buildMessageInput(),
-        ],
+      extendBodyBehindAppBar: true,
+      body: Container(
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage(_getThemeAsset(widget.theme)),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: Column(
+          children: [
+            // Removed SizedBox, padding handled inside _buildHeader
+            _buildHeader(),
+            _buildCompleteButton(),
+            _buildChatHeader(),
+            _buildMessageList(),
+            _buildMessageInput(),
+          ],
+        ),
       ),
     );
   }
 
+  String _getThemeAsset(String theme) {
+    switch (theme) {
+      case 'Forest':
+        return 'assets/images/forest_bg.png';
+      case 'Sunset':
+        return 'assets/images/sunset_bg.png';
+      case 'Energy':
+        return 'assets/images/energy_bg.png';
+      case 'Ocean':
+      default:
+        return 'assets/images/ocean_bg.png';
+    }
+  }
+
   Widget _buildHeader() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.fromLTRB(
+        20,
+        MediaQuery.of(context).padding.top + kToolbarHeight + 10, // Add top padding for status bar + app bar
+        20,
+        20,
+      ),
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [Color(0xFF7B61FF), Color(0xFFFF6EC7)],
@@ -235,7 +268,18 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Chain Title
+          Text(
+            widget.chainTitle,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 20),
           Row(
             children: [
               Expanded(child: _buildProgressSection()),
@@ -450,30 +494,26 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   Widget _buildMessageInput() {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.shade200,
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          )
-        ],
+      decoration: const BoxDecoration(
+        color: Colors.transparent,
       ),
       child: SafeArea(
         child: Row(
           children: [
             IconButton(
               icon: const Icon(Icons.camera_alt_outlined),
+              color: Colors.white,
               onPressed: () => _pickImage(fromCamera: true),
             ),
             IconButton(
               icon: const Icon(Icons.photo_library_outlined),
+              color: Colors.white,
               onPressed: () => _pickImage(fromCamera: false),
             ),
             Expanded(
               child: TextField(
                 controller: _messageController,
+                style: const TextStyle(color: Colors.black),
                 decoration: InputDecoration(
                   hintText: 'Type a message...',
                   filled: true,

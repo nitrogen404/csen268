@@ -384,6 +384,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                                     members: chains[i].members,
                                     progress: chains[i].progress,
                                     code: chains[i].code,
+                                    theme: chains[i].theme,
                                   ),
                                   transitionsBuilder: (_, animation, secondary, child) {
                                     return SharedAxisTransition(

@@ -305,6 +305,7 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
             members: chain.members,
             progress: chain.progress,
             code: chain.code,
+            theme: chain.theme,
           ),
         ),
       );
