@@ -41,8 +41,6 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
-
-  // Cache for user display names
   final Map<String, String> _nameCache = {};
 
   @override
@@ -105,38 +103,67 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     _scrollToBottom();
   }
 
+  // ================================================================
+  // UPDATED IMAGE UPLOAD (MATCHES STORAGE RULES)
+  // ================================================================
   Future<void> _pickImage({required bool fromCamera}) async {
     final user = _authService.currentUser;
     if (user == null) return;
 
-    final XFile? picked = await _picker.pickImage(
-      source: fromCamera ? ImageSource.camera : ImageSource.gallery,
-      imageQuality: 75,
-    );
+    try {
+      final XFile? picked = await _picker.pickImage(
+        source: fromCamera ? ImageSource.camera : ImageSource.gallery,
+        imageQuality: 80,
+      );
 
-    if (picked == null) return;
+      if (picked == null) return;
 
-    final File file = File(picked.path);
-    final storagePath =
-        "chat_images/${widget.chainId}/${DateTime.now().millisecondsSinceEpoch}.jpg";
+      final File file = File(picked.path);
 
-    final ref = FirebaseStorage.instance.ref().child(storagePath);
-    await ref.putFile(file);
+      final String fileName =
+          "${DateTime.now().millisecondsSinceEpoch}_${user.uid}.jpg";
 
-    final downloadUrl = await ref.getDownloadURL();
+      final String storagePath = "chat_images/${widget.chainId}/$fileName";
 
-    final senderName = await _getMyDisplayName();
+      final Reference ref = FirebaseStorage.instance.ref(storagePath);
 
-    await _messageService.sendMessage(
-      chainId: widget.chainId,
-      senderId: user.uid,
-      senderName: senderName,
-      text: "",
-      imageUrl: downloadUrl,
-    );
+      final uploadTask = ref.putFile(
+        file,
+        SettableMetadata(
+          contentType: "image/jpeg",
+          customMetadata: {
+            "uploadedBy": user.uid,
+            "chainId": widget.chainId,
+          },
+        ),
+      );
 
-    _scrollToBottom();
+      await uploadTask;
+
+      final downloadUrl = await ref.getDownloadURL();
+      final senderName = await _getMyDisplayName();
+
+      await _messageService.sendMessage(
+        chainId: widget.chainId,
+        senderId: user.uid,
+        senderName: senderName,
+        text: "",
+        imageUrl: downloadUrl,
+      );
+
+      _scrollToBottom();
+    } catch (e, stack) {
+      debugPrint("❌ IMAGE UPLOAD ERROR: $e");
+      debugPrint(stack.toString());
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Image upload failed: $e")),
+        );
+      }
+    }
   }
+  // ================================================================
 
   void _scrollToBottom() {
     Future.delayed(const Duration(milliseconds: 150), () {
@@ -423,13 +450,15 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-          color: Colors.white,
-          boxShadow: [
-            BoxShadow(
-                color: Colors.grey.shade200,
-                blurRadius: 10,
-                offset: const Offset(0, -2))
-          ]),
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.shade200,
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          )
+        ],
+      ),
       child: SafeArea(
         child: Row(
           children: [
@@ -449,10 +478,13 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                   filled: true,
                   fillColor: Colors.grey.shade100,
                   border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide.none),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    borderRadius: BorderRadius.circular(24),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
                 ),
                 maxLines: null,
                 textInputAction: TextInputAction.send,
@@ -463,7 +495,8 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
             Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
-                    colors: [Color(0xFF7B61FF), Color(0xFFFF6EC7)]),
+                  colors: [Color(0xFF7B61FF), Color(0xFFFF6EC7)],
+                ),
                 shape: BoxShape.circle,
               ),
               child: IconButton(
@@ -481,7 +514,8 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) {
         final cs = Theme.of(context).colorScheme;
         return Padding(
@@ -498,11 +532,13 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              Text('Chain Members',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700)),
+              Text(
+                'Chain Members',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
               const SizedBox(height: 16),
               SizedBox(
                 height: 260,
@@ -533,16 +569,19 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                         return ListTile(
                           leading: CircleAvatar(
                             backgroundColor: cs.primary.withOpacity(0.1),
-                            child: Text(email[0].toUpperCase(),
-                                style: TextStyle(color: cs.primary)),
+                            child: Text(
+                              email[0].toUpperCase(),
+                              style: TextStyle(color: cs.primary),
+                            ),
                           ),
                           title: Text(email, overflow: TextOverflow.ellipsis),
                           subtitle: Text(
                             isOwner ? 'Owner' : 'Member',
                             style: TextStyle(
-                                color: isOwner
-                                    ? cs.primary
-                                    : Colors.grey.shade600),
+                              color: isOwner
+                                  ? cs.primary
+                                  : Colors.grey.shade600,
+                            ),
                           ),
                         );
                       },
@@ -561,7 +600,8 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) {
         final cs = Theme.of(context).colorScheme;
         return Padding(
@@ -578,26 +618,33 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              Text('Share Chain',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700)),
+              Text(
+                'Share Chain',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
               const SizedBox(height: 20),
               QrImageView(
                 data: widget.code,
                 version: QrVersions.auto,
                 size: 180,
                 eyeStyle: QrEyeStyle(
-                    eyeShape: QrEyeShape.circle, color: cs.primary),
+                  eyeShape: QrEyeShape.circle,
+                  color: cs.primary,
+                ),
                 dataModuleStyle: QrDataModuleStyle(
-                    dataModuleShape: QrDataModuleShape.circle,
-                    color: cs.primary),
+                  dataModuleShape: QrDataModuleShape.circle,
+                  color: cs.primary,
+                ),
               ),
               const SizedBox(height: 16),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: cs.surfaceVariant,
                   borderRadius: BorderRadius.circular(12),
@@ -606,11 +653,14 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                   children: [
                     const Icon(Icons.lock_open, size: 18),
                     const SizedBox(width: 8),
-                    Text(widget.code,
-                        style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700)),
+                    Text(
+                      widget.code,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ],
                 ),
               ),
