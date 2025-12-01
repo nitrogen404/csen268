@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 class UserService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -46,14 +48,39 @@ class UserService {
     String? displayName,
     String? bio,
     String? location,
+    String? profilePictureUrl,
   }) async {
     final Map<String, dynamic> update = {};
     if (displayName != null) update['displayName'] = displayName;
     if (bio != null) update['bio'] = bio;
     if (location != null) update['location'] = location;
+    if (profilePictureUrl != null) update['profilePictureUrl'] = profilePictureUrl;
 
     if (update.isEmpty) return;
 
     await _usersCol.doc(userId).set(update, SetOptions(merge: true));
+  }
+
+  Future<String> uploadProfilePicture({
+    required String userId,
+    required File imageFile,
+  }) async {
+    final String fileName = "${DateTime.now().millisecondsSinceEpoch}_$userId.jpg";
+    final String storagePath = "profile_pictures/$userId/$fileName";
+    final Reference ref = FirebaseStorage.instance.ref(storagePath);
+
+    final uploadTask = ref.putFile(
+      imageFile,
+      SettableMetadata(
+        contentType: "image/jpeg",
+        customMetadata: {
+          "uploadedBy": userId,
+        },
+      ),
+    );
+
+    await uploadTask;
+    final downloadUrl = await ref.getDownloadURL();
+    return downloadUrl;
   }
 }

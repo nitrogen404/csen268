@@ -66,6 +66,7 @@ class _ProfilePageState extends State<ProfilePage> {
           final email =
               data['email'] as String? ?? user.email ?? '';
           final isPremium = data['isPremium'] as bool? ?? false;
+          final profilePictureUrl = data['profilePictureUrl'] as String?;
 
           final totalChains = (data['totalChains'] ?? 0).toString();
           final longestStreak = (data['longestStreak'] ?? 0).toString();
@@ -111,6 +112,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   displayName: displayName,
                   email: email,
                   isPremium: isPremium,
+                  profilePictureUrl: profilePictureUrl,
                 ),
 
                 const SizedBox(height: 20),
@@ -363,11 +365,13 @@ class _ProfileHeader extends StatelessWidget {
   final String displayName;
   final String email;
   final bool isPremium;
+  final String? profilePictureUrl;
 
   const _ProfileHeader({
     required this.displayName,
     required this.email,
     required this.isPremium,
+    this.profilePictureUrl,
   });
 
   @override
@@ -425,22 +429,22 @@ class _ProfileHeader extends StatelessWidget {
               ),
             ),
           ),
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              const CircleAvatar(
-                radius: 40,
-                backgroundColor: Color(0xFFFFC72C),
-              ),
-              Text(
-                initials,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
+          CircleAvatar(
+            radius: 40,
+            backgroundColor: const Color(0xFFFFC72C),
+            backgroundImage: (profilePictureUrl != null && profilePictureUrl!.isNotEmpty)
+                ? NetworkImage(profilePictureUrl!)
+                : null,
+            child: (profilePictureUrl == null || profilePictureUrl!.isEmpty)
+                ? Text(
+                    initials,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  )
+                : null,
           ),
           const SizedBox(height: 10),
           Text(
