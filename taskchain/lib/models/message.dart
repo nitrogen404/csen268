@@ -7,6 +7,7 @@ class Message {
   final String senderName;
   final String text;
   final String? imageUrl;
+  final String? audioUrl;
   final DateTime timestamp;
 
   Message({
@@ -16,6 +17,7 @@ class Message {
     required this.senderName,
     required this.text,
     this.imageUrl,
+    this.audioUrl,
     required this.timestamp,
   });
 
@@ -33,6 +35,7 @@ class Message {
       senderName: data['senderName'] ?? 'Unknown',
       text: data['text'] ?? '',
       imageUrl: data['imageUrl'],
+      audioUrl: data['audioUrl'],
       timestamp: time,
     );
   }

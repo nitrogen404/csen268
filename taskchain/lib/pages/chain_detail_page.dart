@@ -1,10 +1,14 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:record/record.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../services/message_service.dart';
 import '../services/auth_service.dart';
@@ -45,6 +49,10 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
   final Map<String, String> _nameCache = {};
+  final AudioRecorder _audioRecorder = AudioRecorder();
+  
+  bool _isRecording = false;
+  
 
   @override
   void initState() {
@@ -58,6 +66,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     ToastNotificationService().setCurrentChain(null);
     _messageController.dispose();
     _scrollController.dispose();
+    _audioRecorder.dispose();
     super.dispose();
   }
 
@@ -162,6 +171,127 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Image upload failed: $e")),
+        );
+      }
+    }
+  }
+  // ================================================================
+
+  // ================================================================
+  // AUDIO RECORDING
+  // ================================================================
+  Future<void> _startRecording() async {
+    try {
+      if (await _audioRecorder.hasPermission()) {
+        final Directory appDocDir = await getApplicationDocumentsDirectory();
+        // Use WAV to rule out emulator AAC encoding issues
+        final String filePath = '${appDocDir.path}/recording_${DateTime.now().millisecondsSinceEpoch}.m4a';
+        
+        await _audioRecorder.start(
+          const RecordConfig(
+            encoder: AudioEncoder.aacLc,
+            sampleRate: 44100,
+            numChannels: 1,
+          ),
+          path: filePath,
+        );
+
+        setState(() {
+          _isRecording = true;
+        });
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Microphone permission denied')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint("❌ RECORDING START ERROR: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to start recording: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    try {
+      final path = await _audioRecorder.stop();
+      
+      setState(() {
+        _isRecording = false;
+      });
+
+      if (path != null) {
+        // Debug: check file size
+        final f = File(path);
+        final bytes = await f.length();
+        debugPrint('🎙️ Recorded file: $path (${bytes} bytes)');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Recorded ${bytes ~/ 1024} KB')),
+          );
+        }
+        await _uploadAudio(File(path));
+      }
+    } catch (e) {
+      debugPrint("❌ RECORDING STOP ERROR: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to stop recording: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _uploadAudio(File audioFile) async {
+    final user = _authService.currentUser;
+    if (user == null) return;
+
+    try {
+      final String fileName = "${DateTime.now().millisecondsSinceEpoch}_${user.uid}.m4a";
+      final String storagePath = "chat_audio/${widget.chainId}/$fileName";
+      final Reference ref = FirebaseStorage.instance.ref(storagePath);
+
+      final uploadTask = ref.putFile(
+        audioFile,
+        SettableMetadata(
+          contentType: "audio/m4a",
+          customMetadata: {
+            "uploadedBy": user.uid,
+            "chainId": widget.chainId,
+          },
+        ),
+      );
+
+      await uploadTask;
+      final downloadUrl = await ref.getDownloadURL();
+      final senderName = await _getMyDisplayName();
+
+      await _messageService.sendMessage(
+        chainId: widget.chainId,
+        senderId: user.uid,
+        senderName: senderName,
+        text: "🎤 Voice message",
+        imageUrl: null,
+        audioUrl: downloadUrl,
+      );
+
+      _scrollToBottom();
+      
+      // Delete local file after upload
+      if (await audioFile.exists()) {
+        await audioFile.delete();
+      }
+    } catch (e, stack) {
+      debugPrint("❌ AUDIO UPLOAD ERROR: $e");
+      debugPrint(stack.toString());
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Audio upload failed: $e")),
         );
       }
     }
@@ -460,6 +590,10 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
               ),
             if (msg.imageUrl != null && msg.text.isNotEmpty)
               const SizedBox(height: 8),
+            if (msg.audioUrl != null)
+              _buildAudioPlayer(msg.audioUrl!, isMe),
+            if (msg.audioUrl != null && msg.text.isNotEmpty)
+              const SizedBox(height: 8),
             if (msg.text.isNotEmpty)
               Text(
                 msg.text,
@@ -491,6 +625,13 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     return '${t.hour}:${t.minute.toString().padLeft(2, '0')}';
   }
 
+  Widget _buildAudioPlayer(String audioUrl, bool isMe) {
+    return _AudioPlayerWidget(
+      audioUrl: audioUrl,
+      isMe: isMe,
+    );
+  }
+
   Widget _buildMessageInput() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -510,6 +651,14 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
               color: Colors.white,
               onPressed: () => _pickImage(fromCamera: false),
             ),
+            IconButton(
+              icon: Icon(
+                _isRecording ? Icons.stop : Icons.mic,
+                color: _isRecording ? Colors.red : Colors.white,
+              ),
+              onPressed: _isRecording ? _stopRecording : _startRecording,
+            ),
+            // Live dB meter removed for a cleaner recording UI
             Expanded(
               child: TextField(
                 controller: _messageController,
@@ -729,6 +878,117 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
           ),
         );
       },
+    );
+  }
+}
+
+// Stateful Audio Player Widget
+class _AudioPlayerWidget extends StatefulWidget {
+  final String audioUrl;
+  final bool isMe;
+
+  const _AudioPlayerWidget({
+    required this.audioUrl,
+    required this.isMe,
+  });
+
+  @override
+  State<_AudioPlayerWidget> createState() => _AudioPlayerWidgetState();
+}
+
+class _AudioPlayerWidgetState extends State<_AudioPlayerWidget> {
+  late final AudioPlayer _player;
+  bool _isPlaying = false;
+  Duration _duration = Duration.zero;
+  Duration _position = Duration.zero;
+
+  @override
+  void initState() {
+    super.initState();
+    _player = AudioPlayer();
+
+    _player.onDurationChanged.listen((d) {
+      if (mounted) setState(() => _duration = d);
+    });
+    _player.onPositionChanged.listen((p) {
+      if (mounted) setState(() => _position = p);
+    });
+    _player.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() {
+          _isPlaying = false;
+          _position = Duration.zero;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _player.dispose();
+    super.dispose();
+  }
+
+  Future<void> _togglePlayPause() async {
+    try {
+      if (_isPlaying) {
+        await _player.pause();
+        if (mounted) setState(() => _isPlaying = false);
+      } else {
+        await _player.play(UrlSource(widget.audioUrl));
+        if (mounted) setState(() => _isPlaying = true);
+      }
+    } catch (e) {
+      debugPrint('❌ AUDIO PLAY ERROR: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to play audio: $e')),
+        );
+      }
+    }
+  }
+
+  String _format(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(1, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: widget.isMe ? Colors.white.withOpacity(0.1) : Colors.grey.shade300,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(
+              _isPlaying ? Icons.pause : Icons.play_arrow,
+              color: widget.isMe ? Colors.white : Colors.black87,
+            ),
+            onPressed: _togglePlayPause,
+          ),
+          Icon(
+            Icons.graphic_eq,
+            size: 16,
+            color: widget.isMe ? Colors.white70 : Colors.black54,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            _duration.inSeconds > 0
+                ? '${_format(_position)} / ${_format(_duration)}'
+                : 'Voice message',
+            style: TextStyle(
+              color: widget.isMe ? Colors.white70 : Colors.black54,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

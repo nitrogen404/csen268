@@ -10,6 +10,7 @@ class MessageService {
     required String senderName,
     required String text,
     String? imageUrl,
+    String? audioUrl,
   }) async {
     final ref = _firestore
         .collection('chains')
@@ -23,6 +24,7 @@ class MessageService {
       'senderName': senderName,
       'text': text,
       'imageUrl': imageUrl,
+      'audioUrl': audioUrl,
       'timestamp': FieldValue.serverTimestamp(),
     });
   }
