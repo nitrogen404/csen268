@@ -26,10 +26,18 @@ class UserService {
       'location': '',
       'isPremium': false,
       'createdAt': Timestamp.fromDate(now),
-      'totalChains': 0,
-      'longestStreak': 0,
+
+      // Global stats
+      'totalChains': 0,            // not used for UI now, but kept for compatibility
       'checkIns': 0,
-      'successRate': 0,
+      'currentStreak': 0,
+      'longestStreak': 0,
+      'successRate': 0.0,
+      'daysActive': 0,
+
+      // Baseline for successRate (Option B)
+      'firstChainJoinDate': null,  // "yyyy-MM-dd" set on first chain join/create
+      'lastActiveDate': null,      // "yyyy-MM-dd" of last day with any check-in
     });
   }
 
@@ -54,7 +62,9 @@ class UserService {
     if (displayName != null) update['displayName'] = displayName;
     if (bio != null) update['bio'] = bio;
     if (location != null) update['location'] = location;
-    if (profilePictureUrl != null) update['profilePictureUrl'] = profilePictureUrl;
+    if (profilePictureUrl != null) {
+      update['profilePictureUrl'] = profilePictureUrl;
+    }
 
     if (update.isEmpty) return;
 
@@ -65,7 +75,8 @@ class UserService {
     required String userId,
     required File imageFile,
   }) async {
-    final String fileName = "${DateTime.now().millisecondsSinceEpoch}_$userId.jpg";
+    final String fileName =
+        "${DateTime.now().millisecondsSinceEpoch}_$userId.jpg";
     final String storagePath = "profile_pictures/$userId/$fileName";
     final Reference ref = FirebaseStorage.instance.ref(storagePath);
 

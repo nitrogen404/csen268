@@ -5,7 +5,6 @@ import '../models/chain.dart';
 class ChainService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  /// Create a new chain and add the owner as the first member.
   Future<Chain> createChain({
     required String ownerId,
     required String ownerEmail,
@@ -23,8 +22,9 @@ class ChainService {
     final chainsRef = _firestore.collection('chains');
     final newDoc = chainsRef.doc();
 
-    final now = DateTime.now();
+    final now = DateTime.now().toUtc();
     final start = startDate ?? now;
+    final startTs = Timestamp.fromDate(start);
 
     final chainData = {
       'title': title.trim(),
@@ -32,21 +32,17 @@ class ChainService {
       'code': code,
       'frequency': frequency,
       'theme': theme,
-      'startDate': Timestamp.fromDate(start),
+      'startDate': startTs,
       'durationDays': durationDays,
       'memberCount': 1,
       'currentStreak': 0,
       'totalDaysCompleted': 0,
       'createdAt': FieldValue.serverTimestamp(),
-      // lastGroupCheckInDate is added lazily when first check-in happens
     };
 
-    // Create chain document
     await newDoc.set(chainData);
 
-    // Add owner as chain member
-    final membersRef = newDoc.collection('members');
-    await membersRef.doc(ownerId).set({
+    await newDoc.collection('members').doc(ownerId).set({
       'userId': ownerId,
       'email': ownerEmail,
       'role': 'owner',
@@ -56,38 +52,36 @@ class ChainService {
       'isActiveToday': false,
     });
 
-    // Update user aggregate stats (safe even if profile already exists)
     final userRef = _firestore.collection('users').doc(ownerId);
-    await userRef.set({
-      'email': ownerEmail,
-      'totalChains': FieldValue.increment(1),
-    }, SetOptions(merge: true));
+    final userSnap = await userRef.get();
+    final nowKey = _dateKeyUtc(now);
 
-    // Build Chain instance for UI
-    final duration = durationDays;
-    const memberCount = 1;
-    const totalCompleted = 0;
-    const currentStreak = 0;
+    final userUpdate = <String, dynamic>{
+      'email': ownerEmail,
+    };
+
+    if (!userSnap.exists || userSnap.data()?['firstChainJoinDate'] == null) {
+      userUpdate['firstChainJoinDate'] = nowKey;
+    }
+
+    await userRef.set(userUpdate, SetOptions(merge: true));
 
     return Chain(
       id: newDoc.id,
       title: title.trim(),
-      days: '$duration days',
-      members: '$memberCount member',
+      days: '$durationDays days',
+      members: '1 member',
       progress: 0.0,
       code: code,
       ownerId: ownerId,
-      durationDays: duration,
-      memberCount: memberCount,
-      currentStreak: currentStreak,
-      totalDaysCompleted: totalCompleted,
+      durationDays: durationDays,
+      memberCount: 1,
+      currentStreak: 0,
+      totalDaysCompleted: 0,
       theme: theme,
     );
   }
 
-  /// Stream all chains the user is a member of.
-  ///
-  /// Uses the members subcollection instead of users/{uid}/chains.
   Stream<List<Chain>> streamJoinedChains(String userId) {
     return _firestore
         .collectionGroup('members')
@@ -101,19 +95,24 @@ class ChainService {
         if (chainRef == null) continue;
 
         final chainSnap = await chainRef.get();
-        if (!chainSnap.exists) continue;
-
-        chains.add(Chain.fromFirestore(chainSnap));
+        if (chainSnap.exists) {
+          chains.add(Chain.fromFirestore(chainSnap));
+        }
       }
 
-      // Optional: sort by creation time descending if needed
-      // For now, sort alphabetically by title to keep it stable.
       chains.sort((a, b) => a.title.compareTo(b.title));
       return chains;
     });
   }
 
-  /// Get only the chain IDs the user has joined.
+  Stream<int> streamJoinedChainCount(String userId) {
+    return _firestore
+        .collectionGroup('members')
+        .where('userId', isEqualTo: userId)
+        .snapshots()
+        .map((snap) => snap.docs.length);
+  }
+
   Future<List<String>> getJoinedChainIds(String userId) async {
     final snapshot = await _firestore
         .collectionGroup('members')
@@ -130,10 +129,6 @@ class ChainService {
     return ids.toList();
   }
 
-  /// Join a chain using a join code.
-  ///
-  /// Returns `true` if the user was newly added to the chain, and `false`
-  /// if they were already a member (in which case no changes are made).
   Future<bool> joinChainByCode({
     required String userId,
     required String userEmail,
@@ -144,7 +139,6 @@ class ChainService {
       throw 'Please enter a code.';
     }
 
-    // Find chain by code
     final query = await _firestore
         .collection('chains')
         .where('code', isEqualTo: trimmed)
@@ -158,17 +152,13 @@ class ChainService {
     final chainDoc = query.docs.first;
     final chainRef = chainDoc.reference;
     final chainData = chainDoc.data();
-    final ownerId = chainData['ownerId'] as String? ?? '';
+    final ownerId = chainData['ownerId'] ?? '';
 
-    final membersRef = chainRef.collection('members');
-    final memberDocRef = membersRef.doc(userId);
+    final memberDocRef = chainRef.collection('members').doc(userId);
     final existing = await memberDocRef.get();
-    if (existing.exists) {
-      // Already a member; nothing to do
-      return false;
-    }
 
-    // Add as new member
+    if (existing.exists) return false;
+
     await memberDocRef.set({
       'userId': userId,
       'email': userEmail,
@@ -179,27 +169,27 @@ class ChainService {
       'isActiveToday': false,
     });
 
-    // Increment memberCount on chain
     await chainRef.update({
       'memberCount': FieldValue.increment(1),
     });
 
-    // Ensure user doc exists at least with email
     final userRef = _firestore.collection('users').doc(userId);
-    await userRef.set({
+    final userSnap = await userRef.get();
+    final nowKey = _dateKeyUtc(DateTime.now().toUtc());
+
+    final userUpdate = <String, dynamic>{
       'email': userEmail,
-    }, SetOptions(merge: true));
+    };
+
+    if (!userSnap.exists || userSnap.data()?['firstChainJoinDate'] == null) {
+      userUpdate['firstChainJoinDate'] = nowKey;
+    }
+
+    await userRef.set(userUpdate, SetOptions(merge: true));
 
     return true;
   }
 
-  /// Complete today's activity for this user and chain.
-  ///
-  /// - Per-user: one check-in per day per chain.
-  /// - Updates per-user streak in the members subcollection.
-  /// - Updates group streak and totalDaysCompleted on the chain.
-  /// - Updates overall stats in users/{uid}.
-  /// - Logs activity in users/{uid}/activity.
   Future<void> completeDailyActivity({
     required String userId,
     required String userEmail,
@@ -207,8 +197,7 @@ class ChainService {
     required String chainTitle,
   }) async {
     final now = DateTime.now().toUtc();
-    final todayKey =
-        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final todayKey = _dateKeyUtc(now);
 
     final chainRef = _firestore.collection('chains').doc(chainId);
     final memberRef = chainRef.collection('members').doc(userId);
@@ -220,32 +209,29 @@ class ChainService {
       final memberSnap = await tx.get(memberRef);
       final userSnap = await tx.get(userRef);
 
-      final chainData = chainSnap.data() ?? {};
-      final memberData = memberSnap.data() ?? {};
-      final userData = userSnap.data() ?? {};
+      final chainData = chainSnap.data() ?? <String, dynamic>{};
+      final memberData = memberSnap.data() ?? <String, dynamic>{};
+      final userData = userSnap.data() ?? <String, dynamic>{};
 
-      // --- Per-user once per day rule ---
+      // Per-chain once-per-day rule
       final lastCheckInStr = memberData['lastCheckInDate'] as String?;
       if (lastCheckInStr == todayKey) {
         throw 'You have already completed today\'s activity for this chain.';
       }
 
-      // --- Per-user streak (per chain) ---
+      // Per-chain personal streak
       int memberStreak = (memberData['streak'] ?? 0) as int;
       if (lastCheckInStr != null) {
         final last = DateTime.parse(lastCheckInStr);
         final lastDate = DateTime.utc(last.year, last.month, last.day);
-        final diff = now.difference(lastDate).inDays;
-        if (diff == 1) {
-          memberStreak += 1;
-        } else {
-          memberStreak = 1;
-        }
+        final todayDate = DateTime.utc(now.year, now.month, now.day);
+        final diff = todayDate.difference(lastDate).inDays;
+
+        memberStreak = diff == 1 ? memberStreak + 1 : 1;
       } else {
         memberStreak = 1;
       }
 
-      // Update member document
       tx.set(
         memberRef,
         {
@@ -258,17 +244,19 @@ class ChainService {
         SetOptions(merge: true),
       );
 
-      // --- Group streak + total days completed ---
+      // Group streak and chain progress
       int groupStreak = (chainData['currentStreak'] ?? 0) as int;
-      final lastGroupStr = chainData['lastGroupCheckInDate'] as String?;
       int totalCompleted = (chainData['totalDaysCompleted'] ?? 0) as int;
+      final lastGroupStr = chainData['lastGroupCheckInDate'] as String?;
 
       if (lastGroupStr != todayKey) {
         if (lastGroupStr != null) {
           final last = DateTime.parse(lastGroupStr);
           final lastDate = DateTime.utc(last.year, last.month, last.day);
-          final diff = now.difference(lastDate).inDays;
-          groupStreak = (diff == 1) ? groupStreak + 1 : 1;
+          final todayDate = DateTime.utc(now.year, now.month, now.day);
+          final diff = todayDate.difference(lastDate).inDays;
+
+          groupStreak = diff == 1 ? groupStreak + 1 : 1;
         } else {
           groupStreak = 1;
         }
@@ -285,26 +273,77 @@ class ChainService {
         SetOptions(merge: true),
       );
 
-      // --- User global stats (profile) ---
-      final totalCheckIns = (userData['checkIns'] ?? 0) as int;
+      // Global user stats
+      int totalCheckIns = (userData['checkIns'] ?? 0) as int;
+      int daysActive = (userData['daysActive'] ?? 0) as int;
+      int currentStreak = (userData['currentStreak'] ?? 0) as int;
       int longestStreak = (userData['longestStreak'] ?? 0) as int;
-      // For now, compare with this chain-specific streak
-      if (memberStreak > longestStreak) {
-        longestStreak = memberStreak;
+
+      final lastActiveStr = userData['lastActiveDate'] as String?;
+      String? firstJoinStr = userData['firstChainJoinDate'] as String?;
+
+      // Fallback for old users with no firstChainJoinDate
+      if (firstJoinStr == null) {
+        firstJoinStr = todayKey;
       }
 
-      tx.set(
-        userRef,
-        {
-          'email': userEmail,
-          'checkIns': totalCheckIns + 1,
-          'currentStreak': memberStreak,
-          'longestStreak': longestStreak,
-        },
-        SetOptions(merge: true),
-      );
+      bool isNewActiveDay = lastActiveStr != todayKey;
 
-      // --- Activity log ---
+      if (isNewActiveDay) {
+        if (lastActiveStr != null) {
+          final last = DateTime.parse(lastActiveStr);
+          final lastDate = DateTime.utc(last.year, last.month, last.day);
+          final todayDate = DateTime.utc(now.year, now.month, now.day);
+          final diff = todayDate.difference(lastDate).inDays;
+
+          currentStreak = diff == 1 ? currentStreak + 1 : 1;
+        } else {
+          currentStreak = 1;
+        }
+
+        daysActive += 1;
+
+        if (currentStreak > longestStreak) {
+          longestStreak = currentStreak;
+        }
+      }
+
+      // Total days since first chain join (Option B)
+      int totalDays = 1;
+      try {
+        final first = DateTime.parse(firstJoinStr);
+        final firstDate = DateTime.utc(first.year, first.month, first.day);
+        final todayDate = DateTime.utc(now.year, now.month, now.day);
+        final diffTotal = todayDate.difference(firstDate).inDays;
+        totalDays = diffTotal + 1;
+        if (totalDays < 1) totalDays = 1;
+      } catch (_) {
+        totalDays = daysActive > 0 ? daysActive : 1;
+      }
+
+      double successRate = 0.0;
+      if (totalDays > 0 && daysActive > 0) {
+        successRate = (daysActive / totalDays) * 100.0;
+      }
+
+      totalCheckIns += 1;
+
+      final userUpdate = <String, dynamic>{
+        'email': userEmail,
+        'checkIns': totalCheckIns,
+        'lastActiveDate': todayKey,
+        'firstChainJoinDate': firstJoinStr,
+      };
+
+      if (isNewActiveDay) {
+        userUpdate['daysActive'] = daysActive;
+        userUpdate['currentStreak'] = currentStreak;
+        userUpdate['longestStreak'] = longestStreak;
+        userUpdate['successRate'] = successRate;
+      }
+
+      tx.set(userRef, userUpdate, SetOptions(merge: true));
+
       tx.set(activityRef, {
         'chainId': chainId,
         'chainTitle': chainTitle,
@@ -314,7 +353,6 @@ class ChainService {
     });
   }
 
-  /// Generate a unique 6-character join code.
   Future<String> _generateUniqueCode() async {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     final rand = Random.secure();
@@ -331,5 +369,12 @@ class ChainService {
 
       if (exists.docs.isEmpty) return code;
     }
+  }
+
+  String _dateKeyUtc(DateTime dt) {
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
   }
 }
