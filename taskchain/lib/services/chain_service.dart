@@ -24,23 +24,22 @@ class ChainService {
 
     final now = DateTime.now().toUtc();
     final start = startDate ?? now;
-    final startTs = Timestamp.fromDate(start);
 
-    final chainData = {
+    await newDoc.set({
       'title': title.trim(),
       'ownerId': ownerId,
       'code': code,
       'frequency': frequency,
       'theme': theme,
-      'startDate': startTs,
+      'startDate': Timestamp.fromDate(start),
       'durationDays': durationDays,
       'memberCount': 1,
       'currentStreak': 0,
       'totalDaysCompleted': 0,
+      'lastGroupCheckInDate': null,
+      'lastCompletionStatus': false,
       'createdAt': FieldValue.serverTimestamp(),
-    };
-
-    await newDoc.set(chainData);
+    });
 
     await newDoc.collection('members').doc(ownerId).set({
       'userId': ownerId,
@@ -49,22 +48,18 @@ class ChainService {
       'joinedAt': FieldValue.serverTimestamp(),
       'lastCheckInDate': null,
       'streak': 0,
-      'isActiveToday': false,
     });
 
     final userRef = _firestore.collection('users').doc(ownerId);
     final userSnap = await userRef.get();
-    final nowKey = _dateKeyUtc(now);
+    final today = _dateKeyUtc(now);
 
-    final userUpdate = <String, dynamic>{
-      'email': ownerEmail,
-    };
-
+    final update = {'email': ownerEmail};
     if (!userSnap.exists || userSnap.data()?['firstChainJoinDate'] == null) {
-      userUpdate['firstChainJoinDate'] = nowKey;
+      update['firstChainJoinDate'] = today;
     }
 
-    await userRef.set(userUpdate, SetOptions(merge: true));
+    await userRef.set(update, SetOptions(merge: true));
 
     return Chain(
       id: newDoc.id,
@@ -166,7 +161,6 @@ class ChainService {
       'joinedAt': FieldValue.serverTimestamp(),
       'lastCheckInDate': null,
       'streak': 0,
-      'isActiveToday': false,
     });
 
     await chainRef.update({
@@ -177,19 +171,19 @@ class ChainService {
     final userSnap = await userRef.get();
     final nowKey = _dateKeyUtc(DateTime.now().toUtc());
 
-    final userUpdate = <String, dynamic>{
-      'email': userEmail,
-    };
-
+    final update = {'email': userEmail};
     if (!userSnap.exists || userSnap.data()?['firstChainJoinDate'] == null) {
-      userUpdate['firstChainJoinDate'] = nowKey;
+      update['firstChainJoinDate'] = nowKey;
     }
 
-    await userRef.set(userUpdate, SetOptions(merge: true));
+    await userRef.set(update, SetOptions(merge: true));
 
     return true;
   }
 
+  // ---------------------------------------------------------------------------
+  // FIXED GROUP STREAK LOGIC
+  // ---------------------------------------------------------------------------
   Future<void> completeDailyActivity({
     required String userId,
     required String userEmail,
@@ -197,161 +191,72 @@ class ChainService {
     required String chainTitle,
   }) async {
     final now = DateTime.now().toUtc();
-    final todayKey = _dateKeyUtc(now);
+    final today = _dateKeyUtc(now);
 
     final chainRef = _firestore.collection('chains').doc(chainId);
     final memberRef = chainRef.collection('members').doc(userId);
-    final userRef = _firestore.collection('users').doc(userId);
-    final activityRef = userRef.collection('activity').doc();
+
+    final membersSnap = await chainRef.collection('members').get();
+    final totalMembers = membersSnap.docs.length;
 
     await _firestore.runTransaction((tx) async {
       final chainSnap = await tx.get(chainRef);
+      final chainData = chainSnap.data() ?? {};
+
       final memberSnap = await tx.get(memberRef);
-      final userSnap = await tx.get(userRef);
+      final memberData = memberSnap.data() ?? {};
 
-      final chainData = chainSnap.data() ?? <String, dynamic>{};
-      final memberData = memberSnap.data() ?? <String, dynamic>{};
-      final userData = userSnap.data() ?? <String, dynamic>{};
+      final lastCheckIn = memberData['lastCheckInDate'] as String?;
+      if (lastCheckIn == today) throw 'Already checked in.';
 
-      // Per-chain once-per-day rule
-      final lastCheckInStr = memberData['lastCheckInDate'] as String?;
-      if (lastCheckInStr == todayKey) {
-        throw 'You have already completed today\'s activity for this chain.';
-      }
+      final lastGroupCheckIn = chainData['lastGroupCheckInDate'] as String?;
+      final lastCompleted = chainData['lastCompletionStatus'] == true;
 
-      // Per-chain personal streak
-      int memberStreak = (memberData['streak'] ?? 0) as int;
-      if (lastCheckInStr != null) {
-        final last = DateTime.parse(lastCheckInStr);
-        final lastDate = DateTime.utc(last.year, last.month, last.day);
-        final todayDate = DateTime.utc(now.year, now.month, now.day);
-        final diff = todayDate.difference(lastDate).inDays;
+      int groupStreak = chainData['currentStreak'] ?? 0;
 
-        memberStreak = diff == 1 ? memberStreak + 1 : 1;
-      } else {
-        memberStreak = 1;
-      }
-
-      tx.set(
-        memberRef,
-        {
-          'userId': userId,
-          'email': userEmail,
-          'lastCheckInDate': todayKey,
-          'streak': memberStreak,
-          'isActiveToday': true,
-        },
-        SetOptions(merge: true),
-      );
-
-      // Group streak and chain progress
-      int groupStreak = (chainData['currentStreak'] ?? 0) as int;
-      int totalCompleted = (chainData['totalDaysCompleted'] ?? 0) as int;
-      final lastGroupStr = chainData['lastGroupCheckInDate'] as String?;
-
-      if (lastGroupStr != todayKey) {
-        if (lastGroupStr != null) {
-          final last = DateTime.parse(lastGroupStr);
-          final lastDate = DateTime.utc(last.year, last.month, last.day);
-          final todayDate = DateTime.utc(now.year, now.month, now.day);
-          final diff = todayDate.difference(lastDate).inDays;
-
-          groupStreak = diff == 1 ? groupStreak + 1 : 1;
-        } else {
-          groupStreak = 1;
+      // reset streak if yesterday was not completed
+      if (lastGroupCheckIn != today) {
+        if (lastGroupCheckIn != null && lastCompleted == false) {
+          groupStreak = 0;
         }
-        totalCompleted += 1;
       }
 
-      tx.set(
-        chainRef,
-        {
+      // update current member
+      tx.update(memberRef, {'lastCheckInDate': today});
+
+      // count how many members checked in today
+      int checked = 0;
+      for (final m in membersSnap.docs) {
+        final data = m.data();
+        final last = data['lastCheckInDate'] as String?;
+        if (m.id == userId) {
+          checked++;
+        } else if (last == today) {
+          checked++;
+        }
+      }
+
+      // all members checked in → success day
+      if (checked == totalMembers) {
+        groupStreak++;
+
+        tx.update(chainRef, {
           'currentStreak': groupStreak,
-          'lastGroupCheckInDate': todayKey,
-          'totalDaysCompleted': totalCompleted,
-        },
-        SetOptions(merge: true),
-      );
-
-      // Global user stats
-      int totalCheckIns = (userData['checkIns'] ?? 0) as int;
-      int daysActive = (userData['daysActive'] ?? 0) as int;
-      int currentStreak = (userData['currentStreak'] ?? 0) as int;
-      int longestStreak = (userData['longestStreak'] ?? 0) as int;
-
-      final lastActiveStr = userData['lastActiveDate'] as String?;
-      String? firstJoinStr = userData['firstChainJoinDate'] as String?;
-
-      // Fallback for old users with no firstChainJoinDate
-      if (firstJoinStr == null) {
-        firstJoinStr = todayKey;
+          'totalDaysCompleted': (chainData['totalDaysCompleted'] ?? 0) + 1,
+          'lastGroupCheckInDate': today,
+          'lastCompletionStatus': true,
+        });
+      } else {
+        // still waiting for others
+        tx.update(chainRef, {
+          'lastGroupCheckInDate': today,
+          'lastCompletionStatus': false,
+        });
       }
-
-      bool isNewActiveDay = lastActiveStr != todayKey;
-
-      if (isNewActiveDay) {
-        if (lastActiveStr != null) {
-          final last = DateTime.parse(lastActiveStr);
-          final lastDate = DateTime.utc(last.year, last.month, last.day);
-          final todayDate = DateTime.utc(now.year, now.month, now.day);
-          final diff = todayDate.difference(lastDate).inDays;
-
-          currentStreak = diff == 1 ? currentStreak + 1 : 1;
-        } else {
-          currentStreak = 1;
-        }
-
-        daysActive += 1;
-
-        if (currentStreak > longestStreak) {
-          longestStreak = currentStreak;
-        }
-      }
-
-      // Total days since first chain join (Option B)
-      int totalDays = 1;
-      try {
-        final first = DateTime.parse(firstJoinStr);
-        final firstDate = DateTime.utc(first.year, first.month, first.day);
-        final todayDate = DateTime.utc(now.year, now.month, now.day);
-        final diffTotal = todayDate.difference(firstDate).inDays;
-        totalDays = diffTotal + 1;
-        if (totalDays < 1) totalDays = 1;
-      } catch (_) {
-        totalDays = daysActive > 0 ? daysActive : 1;
-      }
-
-      double successRate = 0.0;
-      if (totalDays > 0 && daysActive > 0) {
-        successRate = (daysActive / totalDays) * 100.0;
-      }
-
-      totalCheckIns += 1;
-
-      final userUpdate = <String, dynamic>{
-        'email': userEmail,
-        'checkIns': totalCheckIns,
-        'lastActiveDate': todayKey,
-        'firstChainJoinDate': firstJoinStr,
-      };
-
-      if (isNewActiveDay) {
-        userUpdate['daysActive'] = daysActive;
-        userUpdate['currentStreak'] = currentStreak;
-        userUpdate['longestStreak'] = longestStreak;
-        userUpdate['successRate'] = successRate;
-      }
-
-      tx.set(userRef, userUpdate, SetOptions(merge: true));
-
-      tx.set(activityRef, {
-        'chainId': chainId,
-        'chainTitle': chainTitle,
-        'description': 'Completed $chainTitle',
-        'timestamp': FieldValue.serverTimestamp(),
-      });
     });
   }
+
+  // ---------------------------------------------------------------------------
 
   Future<String> _generateUniqueCode() async {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
