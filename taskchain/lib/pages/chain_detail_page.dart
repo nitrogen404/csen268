@@ -19,6 +19,8 @@ import '../services/notification_badge_service.dart';
 import '../services/toast_notification_service.dart';
 import '../services/chain_service.dart';
 import '../services/friend_service.dart';
+import '../services/user_service.dart';
+import '../services/group_reminder_service.dart';
 import '../models/message.dart';
 import 'chain_media_widgets.dart';
 import 'full_screen_image_page.dart';
@@ -51,6 +53,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   final NotificationBadgeService _badgeService = NotificationBadgeService();
   final ChainService _chainService = ChainService();
   final FriendService _friendService = FriendService();
+  final UserService _userService = UserService();
 
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -590,16 +593,67 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     if (user == null) return;
 
     try {
+      // Check if all OTHER members (excluding current user) have already checked in
+      final allOthersCheckedIn = await _checkIfAllOtherMembersCheckedIn(user.uid);
+      
+      // Complete the check-in first (without reminders)
       await _chainService.completeDailyActivity(
         userId: user.uid,
         userEmail: user.email ?? '',
         chainId: widget.chainId,
         chainTitle: widget.chainTitle,
+        sendReminders: false, // Don't send reminders automatically
       );
+      
       if (mounted) {
+        // Show success message
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Today's activity completed.")),
         );
+        
+        // Only show remind dialog if not everyone else has checked in
+        if (!allOthersCheckedIn) {
+          // Show dialog asking if they want to remind others
+          final shouldRemind = await _showRemindOthersDialog();
+          
+          if (shouldRemind == true && mounted) {
+            // Send reminders to other members
+            try {
+              final groupReminderService = GroupReminderService();
+              final userProfile = await _userService.getUserProfile(user.uid);
+              final userData = userProfile.data() as Map<String, dynamic>? ?? {};
+              final userName = userData['displayName'] as String? ?? 
+                              user.email?.split('@').first ?? 'You';
+              
+              await groupReminderService.remindGroupMembers(
+                chainId: widget.chainId,
+                chainTitle: widget.chainTitle,
+                completedByUserId: user.uid,
+                completedByUserName: userName,
+              );
+              
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Reminders sent to other members!")),
+                );
+              }
+            } catch (e) {
+              print('Error sending reminders: $e');
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("Check-in completed, but couldn't send reminders: ${e.toString()}")),
+                );
+              }
+            }
+          }
+        } else {
+          // All other members have already checked in
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Great! Everyone has already checked in today! 🎉")),
+            );
+          }
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -608,6 +662,90 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
         );
       }
     }
+  }
+
+  /// Check if all OTHER members (excluding current user) have checked in today
+  Future<bool> _checkIfAllOtherMembersCheckedIn(String currentUserId) async {
+    try {
+      final today = _dateKeyUtc(DateTime.now().toUtc());
+      final chainRef = FirebaseFirestore.instance
+          .collection('chains')
+          .doc(widget.chainId);
+      
+      final membersSnap = await chainRef.collection('members').get();
+      
+      if (membersSnap.docs.isEmpty) {
+        return true; // No members, consider all checked in
+      }
+      
+      // Check if all OTHER members (excluding current user) have checked in today
+      for (final memberDoc in membersSnap.docs) {
+        final memberData = memberDoc.data();
+        final memberUserId = memberData['userId'] as String? ?? memberDoc.id;
+        
+        // Skip the current user
+        if (memberUserId == currentUserId) continue;
+        
+        final lastCheckIn = memberData['lastCheckInDate'] as String?;
+        
+        if (lastCheckIn != today) {
+          return false; // At least one other member hasn't checked in
+        }
+      }
+      
+      return true; // All other members have checked in
+    } catch (e) {
+      print('Error checking if all other members checked in: $e');
+      return false; // On error, assume not all checked in (safer to show dialog)
+    }
+  }
+
+  /// Helper to format date as yyyy-MM-dd
+  String _dateKeyUtc(DateTime date) {
+    final year = date.year;
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+
+  Future<bool?> _showRemindOthersDialog() async {
+    return showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.notifications_active, color: Color(0xFF7B61FF)),
+              SizedBox(width: 8),
+              Text('Remind Others?'),
+            ],
+          ),
+          content: const Text(
+            'Would you like to remind other members to complete their check-in? This will help keep the streak going!',
+            style: TextStyle(fontSize: 15),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text(
+                'No',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF7B61FF),
+              ),
+              child: const Text('Yes, Remind Them'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _confirmDeleteChain() async {

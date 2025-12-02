@@ -54,9 +54,36 @@ class NotificationService {
     // Handle notification taps when app is opened from background
     FirebaseMessaging.onMessageOpenedApp.listen(_handleBackgroundMessage);
 
-    // Get FCM token (useful for debugging or backend registration)
+    // Get FCM token and store it in Firestore for Cloud Functions
     final token = await _firebaseMessaging.getToken();
     print('FCM Token: $token');
+    
+    // Store token in Firestore for Cloud Functions to use
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null && token != null) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .update({'fcmToken': token});
+      } catch (e) {
+        print('Error storing FCM token: $e');
+      }
+    }
+    
+    // Listen for token refresh
+    _firebaseMessaging.onTokenRefresh.listen((newToken) {
+      print('FCM Token refreshed: $newToken');
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser != null) {
+        FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.uid)
+            .update({'fcmToken': newToken}).catchError((e) {
+          print('Error updating FCM token: $e');
+        });
+      }
+    });
   }
 
   // Handle foreground messages

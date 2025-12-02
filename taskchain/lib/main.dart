@@ -21,16 +21,28 @@ import 'cubits/settings_cubit.dart';
 import 'models/app_settings.dart';
 import 'services/notification_service.dart';
 import 'services/friend_service.dart';
+import 'services/reminder_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 final ValueNotifier<int> navIndex = ValueNotifier<int>(0);
 final ValueNotifier<int> inboxCount = ValueNotifier<int>(0);
 
+// Global reminder service instance
+final ReminderService reminderService = ReminderService();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Load environment variables from .env file
+  await dotenv.load(fileName: ".env");
+  
   await Firebase.initializeApp();
 
   // Initialize push + local notifications once at app startup.
   await NotificationService().initialize();
+  
+  // Initialize reminder service
+  await reminderService.initialize();
 
   // Always show onboarding screens before sign-in for logged-out users.
   // (Onboarding itself still sets a flag so we can change this behavior later
@@ -73,7 +85,7 @@ class ChainzApp extends StatelessWidget {
         final repo = SettingsRepository();
 
         return BlocProvider<SettingsCubit>(
-          create: (_) => SettingsCubit(repo, user.uid),
+          create: (_) => SettingsCubit(repo, user.uid, reminderService),
           child: BlocBuilder<SettingsCubit, SettingsState>(
             builder: (context, state) {
               final AppSettings settings =

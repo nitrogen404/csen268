@@ -1,6 +1,8 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/chain.dart';
+import 'group_reminder_service.dart';
+import 'user_service.dart';
 
 class ChainService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -189,6 +191,7 @@ class ChainService {
     required String userEmail,
     required String chainId,
     required String chainTitle,
+    bool sendReminders = true,
   }) async {
     final now = DateTime.now().toUtc();
     final today = _dateKeyUtc(now);
@@ -254,6 +257,28 @@ class ChainService {
         });
       }
     });
+
+    // Send reminders to other members who haven't checked in yet
+    if (sendReminders) {
+      try {
+        final userService = UserService();
+        final userProfile = await userService.getUserProfile(userId);
+        final userData = userProfile.data() as Map<String, dynamic>? ?? {};
+        final userName = userData['displayName'] as String? ?? 
+                        userEmail.split('@').first;
+
+        final reminderService = GroupReminderService();
+        await reminderService.remindGroupMembers(
+          chainId: chainId,
+          chainTitle: chainTitle,
+          completedByUserId: userId,
+          completedByUserName: userName,
+        );
+      } catch (e) {
+        // Don't fail the check-in if reminder sending fails
+        print('Error sending group reminders: $e');
+      }
+    }
   }
 
   /// Delete an entire chain and its direct subcollections (members, messages).

@@ -1,15 +1,16 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../services/auth_service.dart';
 import '../services/chain_service.dart';
 import '../services/user_service.dart';
 
 class AiriaService {
-  // TODO: Replace with your actual API key from environment variables
-  // For production, use flutter_dotenv or similar to load from .env file
-  static const String _apiKey = 'ak-NTM1ODMzMzExfDE3NjQ2OTI4NjQ0OTZ8dGktUVVrZ1FXZGxiblJ6SUVoaFkydGhkR2h2YmlCVFJpMVBjR1Z1SUZKbFoybHpkSEpoZEdsdmJpMVFjbTltWlhOemFXOXVZV3c9fDF8MjMwOTYwODM0NiAg';
-  static const String _pipelineId = '19c964a4-ba8c-47a5-b505-498f41214f10';
+  // Load from .env file
+  String get _apiKey => dotenv.env['AIRIA_API_KEY'] ?? '';
+  String get _pipelineId => dotenv.env['AIRIA_PIPELINE_ID'] ?? '';
+  String get _reminderPipelineId => dotenv.env['AIRIA_REMINDER_PIPELINE_ID'] ?? '';
   static const String _baseUrl = 'https://api.airia.ai/v2/PipelineExecution';
 
   final AuthService _authService = AuthService();
@@ -206,8 +207,8 @@ User Question: $userInput''';
 
   /// Send a message to Airia API and get response
   Future<String> sendMessage(String userInput) async {
-    if (_apiKey == 'YOUR_AIRIA_API_KEY_HERE') {
-      throw Exception('Airia API key not configured. Please set your API key in airia_service.dart');
+    if (_apiKey.isEmpty) {
+      throw Exception('Airia API key not configured. Please set AIRIA_API_KEY in .env file');
     }
 
     try {
@@ -279,6 +280,56 @@ User Question: $userInput''';
         rethrow;
       }
       throw Exception('Failed to send message to Airia: $e');
+    }
+  }
+
+  /// Send a reminder message using the reminder pipeline
+  /// This uses a separate pipeline optimized for generating short reminder messages
+  Future<String> sendReminderMessage(String userInput) async {
+    if (_apiKey.isEmpty) {
+      throw Exception('Airia API key not configured. Please set AIRIA_API_KEY in .env file');
+    }
+
+    try {
+      final prompt = await _buildPrompt(userInput);
+
+      final response = await http.post(
+        Uri.parse('$_baseUrl/$_reminderPipelineId'),
+        headers: {
+          'X-API-KEY': _apiKey,
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'userInput': prompt,
+          'asyncOutput': false,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        
+        // Try multiple possible response structures
+        String? result;
+        
+        if (data is Map<String, dynamic>) {
+          result = data['result'] as String?;
+          result ??= data['output'] as String?;
+          result ??= data['response'] as String?;
+          result ??= data['message'] as String?;
+        } else if (data is String) {
+          result = data;
+        }
+        
+        if (result != null && result.isNotEmpty) {
+          return result;
+        } else {
+          throw Exception('Could not parse reminder response. Response body: ${response.body}');
+        }
+      } else {
+        throw Exception('API request failed: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('Failed to send reminder message to Airia: $e');
     }
   }
 }

@@ -47,3 +47,13 @@ android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
 macos/Runner/GoogleService-Info.plist
 web/firebase-messaging-sw.js
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Cloud Functions
+functions/node_modules/
+functions/.env
+functions/*.log
