@@ -8,6 +8,7 @@ import '../models/app_settings.dart';
 import 'help_support_page.dart';
 import 'privacy_policy_page.dart';
 import 'about_page.dart';
+import 'chatbot_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({Key? key}) : super(key: key);
@@ -141,6 +142,25 @@ class _SettingsPageState extends State<SettingsPage> {
                     }
                   },
                 ),
+              ),
+
+              const SizedBox(height: 8),
+              _sectionDivider(),
+
+              _sectionHeader("PREMIUM FEATURES"),
+
+              _cardTile(
+                icon: Icons.smart_toy,
+                color: const Color(0xFF7B61FF),
+                title: "AI Assistant",
+                subtitle: "Get personalized advice about your chains",
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const ChatbotPage(),
+                    ),
+                  );
+                },
               ),
 
               const SizedBox(height: 8),
