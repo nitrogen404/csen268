@@ -3,9 +3,46 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/chain.dart';
 import 'group_reminder_service.dart';
 import 'user_service.dart';
+import 'shop_service.dart';
+import 'currency_service.dart';
 
 class ChainService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final ShopService _shopService = ShopService();
+  final CurrencyService _currencyService = CurrencyService();
+
+  // Chain limit constants
+  static const int FREE_USER_CHAIN_LIMIT = 2;
+  static const int PREMIUM_USER_CHAIN_LIMIT = -1; // -1 means unlimited
+
+  /// Get current chain count for a user
+  Future<int> getCurrentChainCount(String userId) async {
+    final snapshot = await _firestore
+        .collectionGroup('members')
+        .where('userId', isEqualTo: userId)
+        .get();
+    return snapshot.docs.length;
+  }
+
+  /// Check if user is premium
+  Future<bool> isUserPremium(String userId) async {
+    return await _shopService.isPremiumActive(userId);
+  }
+
+  /// Check if user can create/join more chains
+  Future<void> checkChainLimit(String userId) async {
+    // Check if user is premium
+    final isPremium = await isUserPremium(userId);
+
+    // Premium users have unlimited chains
+    if (isPremium) return;
+
+    // Free users: check current chain count
+    final currentCount = await getCurrentChainCount(userId);
+    if (currentCount >= FREE_USER_CHAIN_LIMIT) {
+      throw 'Free users can only have $FREE_USER_CHAIN_LIMIT active chains. Upgrade to Premium for unlimited chains!';
+    }
+  }
 
   Future<Chain> createChain({
     required String ownerId,
@@ -16,6 +53,9 @@ class ChainService {
     required int durationDays,
     required String theme,
   }) async {
+    // Check chain limit BEFORE creating
+    await checkChainLimit(ownerId);
+
     if (title.trim().isEmpty) {
       throw 'Please enter a habit name.';
     }
@@ -131,6 +171,9 @@ class ChainService {
     required String userEmail,
     required String code,
   }) async {
+    // Check chain limit BEFORE joining
+    await checkChainLimit(userId);
+
     final trimmed = code.trim();
     if (trimmed.isEmpty) {
       throw 'Please enter a code.';
@@ -258,6 +301,20 @@ class ChainService {
       }
     });
 
+    // Award coins for check-in
+    try {
+      await _currencyService.earnCoinsFromCheckIn(userId);
+
+      // Get user's current streak and award milestone coins if applicable
+      final userDoc = await _firestore.collection('users').doc(userId).get();
+      final userData = userDoc.data() ?? {};
+      final currentStreak = (userData['currentStreak'] as int?) ?? 0;
+      await _currencyService.earnCoinsFromStreak(userId, currentStreak);
+    } catch (e) {
+      // Don't fail check-in if coin earning fails
+      print('Error awarding coins: $e');
+    }
+
     // Send reminders to other members who haven't checked in yet
     if (sendReminders) {
       try {
@@ -279,6 +336,57 @@ class ChainService {
         print('Error sending group reminders: $e');
       }
     }
+
+    // Check if chain is completed and award completion coins
+    try {
+      final chainDoc = await chainRef.get();
+      final chainData = chainDoc.data() ?? {};
+      final totalDaysCompleted = (chainData['totalDaysCompleted'] as int?) ?? 0;
+      final durationDays = (chainData['durationDays'] as int?) ?? 0;
+
+      if (durationDays > 0 && totalDaysCompleted >= durationDays) {
+        // Check if we've already awarded completion coins
+        final completionAwarded = chainData['completionCoinsAwarded'] as bool? ?? false;
+        if (!completionAwarded) {
+          // Award coins to all members
+          final allMembers = await chainRef.collection('members').get();
+          for (final memberDoc in allMembers.docs) {
+            final memberUserId = memberDoc.data()['userId'] as String? ?? memberDoc.id;
+            await _currencyService.earnCoinsFromChainCompletion(memberUserId);
+          }
+
+          // Mark as awarded
+          await chainRef.update({'completionCoinsAwarded': true});
+        }
+      }
+    } catch (e) {
+      // Don't fail check-in if completion coin check fails
+      print('Error checking chain completion: $e');
+    }
+  }
+
+  /// Update chain theme
+  /// Only the chain owner can change the theme
+  Future<void> updateChainTheme({
+    required String chainId,
+    required String theme,
+    required String requesterId,
+  }) async {
+    final chainRef = _firestore.collection('chains').doc(chainId);
+    final chainDoc = await chainRef.get();
+
+    if (!chainDoc.exists) {
+      throw 'Chain not found';
+    }
+
+    final data = chainDoc.data() as Map<String, dynamic>? ?? {};
+    final ownerId = data['ownerId'] as String? ?? '';
+
+    if (ownerId != requesterId) {
+      throw 'Only the chain owner can change the theme';
+    }
+
+    await chainRef.update({'theme': theme});
   }
 
   /// Delete an entire chain and its direct subcollections (members, messages).

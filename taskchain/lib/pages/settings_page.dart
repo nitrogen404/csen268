@@ -9,6 +9,7 @@ import 'help_support_page.dart';
 import 'privacy_policy_page.dart';
 import 'about_page.dart';
 import 'chatbot_page.dart';
+import 'shop_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({Key? key}) : super(key: key);
@@ -148,6 +149,20 @@ class _SettingsPageState extends State<SettingsPage> {
               _sectionDivider(),
 
               _sectionHeader("PREMIUM FEATURES"),
+
+              _cardTile(
+                icon: Icons.store,
+                color: const Color(0xFF7B61FF),
+                title: "Shop",
+                subtitle: "Buy themes, premium features, and more",
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const ShopPage(),
+                    ),
+                  );
+                },
+              ),
 
               _cardTile(
                 icon: Icons.smart_toy,

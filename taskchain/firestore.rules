@@ -8,6 +8,10 @@ service cloud.firestore {
 
       allow update, create: if request.auth != null &&
         request.auth.uid == userId;
+      
+      // Allow coin transactions (for earning/spending)
+      // Users can update their own coins via CurrencyService
+      // Note: Coin updates are validated in the app code (CurrencyService)
 
       match /activity/{activityId} {
         allow read, create: if request.auth != null &&
@@ -62,6 +66,17 @@ service cloud.firestore {
         
         // Cloud Functions can update (mark as sent) - handled via admin SDK
       }
+
+      // Coin transactions history (optional, for tracking)
+      match /coinTransactions/{transactionId} {
+        // Users can read their own transaction history
+        allow read: if request.auth != null &&
+          request.auth.uid == userId;
+        
+        // Users can create their own transaction records
+        allow create: if request.auth != null &&
+          request.auth.uid == userId;
+      }
     }
 
     /* CHAINS */
@@ -73,6 +88,10 @@ service cloud.firestore {
           exists(/databases/$(database)/documents/chains/$(chainId)/members/$(request.auth.uid))
           ||
           request.resource.data.memberCount > resource.data.memberCount
+          ||
+          // Allow owner to update theme
+          (get(/databases/$(database)/documents/chains/$(chainId)).data.ownerId == request.auth.uid
+           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['theme']))
         );
 
       allow delete: if request.auth != null &&

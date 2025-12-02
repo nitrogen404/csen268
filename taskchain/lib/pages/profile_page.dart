@@ -10,6 +10,7 @@ import '../services/auth_service.dart';
 import '../services/user_service.dart';
 import '../services/chain_service.dart';
 import '../services/friend_service.dart';
+import '../services/currency_service.dart';
 import 'edit_profile_page.dart';
 import 'friend_profile_page.dart';
 import 'full_screen_image_page.dart';
@@ -26,6 +27,21 @@ class _ProfilePageState extends State<ProfilePage> {
   final _userService = UserService();
   final _chainService = ChainService();
   final _friendService = FriendService();
+  final _currencyService = CurrencyService();
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeCoinsIfNeeded();
+  }
+
+  Future<void> _initializeCoinsIfNeeded() async {
+    final user = _authService.currentUser;
+    if (user != null) {
+      // Ensure coins field exists for existing users (one-time migration)
+      await _currencyService.ensureCoinsField(user.uid);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

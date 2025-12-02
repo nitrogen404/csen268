@@ -21,9 +21,11 @@ import '../services/chain_service.dart';
 import '../services/friend_service.dart';
 import '../services/user_service.dart';
 import '../services/group_reminder_service.dart';
+import '../services/shop_service.dart';
 import '../models/message.dart';
 import 'chain_media_widgets.dart';
 import 'full_screen_image_page.dart';
+import 'shop_page.dart';
 
 class ChainDetailPage extends StatefulWidget {
   final String chainId;
@@ -54,6 +56,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   final ChainService _chainService = ChainService();
   final FriendService _friendService = FriendService();
   final UserService _userService = UserService();
+  final ShopService _shopService = ShopService();
 
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -458,11 +461,18 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
             onPressed: _showMembersSheet,
             color: Colors.white, // Make icons white to match header
           ),
-          if (_isOwner)
+          if (_isOwner) ...[
+            IconButton(
+              icon: const Icon(Icons.palette_outlined),
+              onPressed: _showThemeSelector,
+              color: Colors.white,
+              tooltip: 'Change Theme',
+            ),
             IconButton(
               icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
               onPressed: _confirmDeleteChain,
             ),
+          ],
         ],
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white, // Make back button white
@@ -498,6 +508,14 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
         return 'assets/images/sunset_bg.png';
       case 'Energy':
         return 'assets/images/energy_bg.png';
+      case 'Galaxy':
+        return 'assets/images/galaxy.png';
+      case 'Aurora':
+        return 'assets/images/aurora.png';
+      case 'Neon':
+        return 'assets/images/Neon.png';
+      case 'Minimal':
+        return 'assets/images/Minimal.png';
       case 'Ocean':
       default:
         return 'assets/images/ocean_bg.png';
@@ -706,6 +724,166 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     final month = date.month.toString().padLeft(2, '0');
     final day = date.day.toString().padLeft(2, '0');
     return '$year-$month-$day';
+  }
+
+  Future<void> _showThemeSelector() async {
+    final user = _authService.currentUser;
+    if (user == null) return;
+
+    try {
+      final availableThemes = await _shopService.getAvailableThemes(user.uid);
+      final allThemes = _shopService.getAllThemes();
+      
+      final themeColors = {
+        'Ocean': [const Color(0xFF7B61FF), const Color(0xFF4C8DFF)],
+        'Forest': [const Color(0xFF14C38E), const Color(0xFF3CCF4E)],
+        'Sunset': [const Color(0xFFFF6EC7), const Color(0xFFFF9A9E)],
+        'Energy': [const Color(0xFFFF5A5F), const Color(0xFFFFC371)],
+        'Galaxy': [const Color(0xFF6B46C1), const Color(0xFF9333EA)],
+        'Aurora': [const Color(0xFF10B981), const Color(0xFF06B6D4)],
+        'Neon': [const Color(0xFFEC4899), const Color(0xFFF59E0B)],
+        'Minimal': [const Color(0xFF6B7280), const Color(0xFF9CA3AF)],
+      };
+
+      if (!mounted) return;
+
+      showModalBottomSheet(
+        context: context,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (context) => Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Change Theme',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: allThemes.map((themeData) {
+                  final name = themeData['name'] as String;
+                  final cost = themeData['cost'] as int;
+                  final isAvailable = availableThemes.contains(name);
+                  final isSelected = widget.theme == name;
+                  final colors = themeColors[name] ?? [Colors.grey, Colors.grey.shade700];
+
+                  return GestureDetector(
+                    onTap: isAvailable
+                        ? () async {
+                            try {
+                              await _chainService.updateChainTheme(
+                                chainId: widget.chainId,
+                                theme: name,
+                                requesterId: user.uid,
+                              );
+                              if (mounted) {
+                                Navigator.pop(context);
+                                // Refresh page by updating state or navigating
+                                Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => ChainDetailPage(
+                                      chainId: widget.chainId,
+                                      chainTitle: widget.chainTitle,
+                                      members: widget.members,
+                                      progress: widget.progress,
+                                      code: widget.code,
+                                      theme: name,
+                                    ),
+                                  ),
+                                );
+                              }
+                            } catch (e) {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(e.toString())),
+                                );
+                              }
+                            }
+                          }
+                        : () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const ShopPage()),
+                            );
+                          },
+                    child: Opacity(
+                      opacity: isAvailable ? 1.0 : 0.6,
+                      child: Container(
+                        width: 100,
+                        height: 100,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: colors,
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          border: isSelected
+                              ? Border.all(color: Colors.white, width: 3)
+                              : null,
+                        ),
+                        child: Stack(
+                          children: [
+                            Center(
+                              child: Text(
+                                name,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            if (isSelected)
+                              const Positioned(
+                                top: 6,
+                                right: 6,
+                                child: Icon(Icons.check, color: Colors.white, size: 20),
+                              ),
+                            if (!isAvailable)
+                              Positioned.fill(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.3),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Center(
+                                    child: Icon(
+                                      Icons.lock,
+                                      color: Colors.white,
+                                      size: 24,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading themes: $e')),
+        );
+      }
+    }
   }
 
   Future<bool?> _showRemindOthersDialog() async {

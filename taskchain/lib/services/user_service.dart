@@ -12,33 +12,56 @@ class UserService {
   Future<void> ensureUserProfile(User user) async {
     final docRef = _usersCol.doc(user.uid);
     final doc = await docRef.get();
-    if (doc.exists) return;
+    
+    if (!doc.exists) {
+      final now = DateTime.now();
+      final email = user.email ?? '';
+      final defaultName =
+          email.isNotEmpty ? email.split('@').first : 'TaskChain User';
 
-    final now = DateTime.now();
-    final email = user.email ?? '';
-    final defaultName =
-        email.isNotEmpty ? email.split('@').first : 'TaskChain User';
+      await docRef.set({
+        'displayName': defaultName,
+        'email': email,
+        'bio': '',
+        'location': '',
+        'isPremium': false,
+        'premiumExpiresAt': null,
+        'premiumType': null,
+        'coins': 0,
+        'purchasedThemes': [],
+        'createdAt': Timestamp.fromDate(now),
 
-    await docRef.set({
-      'displayName': defaultName,
-      'email': email,
-      'bio': '',
-      'location': '',
-      'isPremium': false,
-      'createdAt': Timestamp.fromDate(now),
+        // Global stats
+        'totalChains': 0,            // not used for UI now, but kept for compatibility
+        'checkIns': 0,
+        'currentStreak': 0,
+        'longestStreak': 0,
+        'successRate': 0.0,
+        'daysActive': 0,
 
-      // Global stats
-      'totalChains': 0,            // not used for UI now, but kept for compatibility
-      'checkIns': 0,
-      'currentStreak': 0,
-      'longestStreak': 0,
-      'successRate': 0.0,
-      'daysActive': 0,
+        // Baseline for successRate (Option B)
+        'firstChainJoinDate': null,  // "yyyy-MM-dd" set on first chain join/create
+        'lastActiveDate': null,      // "yyyy-MM-dd" of last day with any check-in
 
-      // Baseline for successRate (Option B)
-      'firstChainJoinDate': null,  // "yyyy-MM-dd" set on first chain join/create
-      'lastActiveDate': null,      // "yyyy-MM-dd" of last day with any check-in
-    });
+        // AI chatbot tracking
+        'aiMessagesToday': 0,
+        'aiMessagesDate': null,  // "yyyy-MM-dd" format
+      });
+    } else {
+      // Ensure existing users have coins field initialized
+      final data = doc.data() ?? {};
+      if (!data.containsKey('coins')) {
+        await docRef.set({'coins': 0}, SetOptions(merge: true));
+      }
+      // Ensure purchasedThemes field exists
+      if (!data.containsKey('purchasedThemes')) {
+        await docRef.set({'purchasedThemes': []}, SetOptions(merge: true));
+      }
+      // Ensure premium fields exist
+      if (!data.containsKey('isPremium')) {
+        await docRef.set({'isPremium': false}, SetOptions(merge: true));
+      }
+    }
   }
 
   Stream<DocumentSnapshot<Map<String, dynamic>>> streamUserProfile(

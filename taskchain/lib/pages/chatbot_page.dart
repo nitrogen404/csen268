@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/airia_service.dart';
+import '../services/shop_service.dart';
+import '../services/auth_service.dart';
+import '../services/user_service.dart';
+import 'shop_page.dart';
 
 class ChatbotPage extends StatefulWidget {
   const ChatbotPage({super.key});
@@ -10,10 +15,16 @@ class ChatbotPage extends StatefulWidget {
 
 class _ChatbotPageState extends State<ChatbotPage> {
   final AiriaService _airiaService = AiriaService();
+  final ShopService _shopService = ShopService();
+  final AuthService _authService = AuthService();
+  final UserService _userService = UserService();
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
   bool _isLoading = false;
+  bool _isPremium = false;
+  int _messagesToday = 0;
+  static const int FREE_MESSAGE_LIMIT = 5;
 
   @override
   void initState() {
@@ -24,6 +35,78 @@ class _ChatbotPageState extends State<ChatbotPage> {
       isUser: false,
       timestamp: DateTime.now(),
     ));
+    _loadPremiumStatus();
+    _loadMessageCount();
+  }
+
+  Future<void> _loadPremiumStatus() async {
+    final user = _authService.currentUser;
+    if (user == null) return;
+
+    try {
+      final isPremium = await _shopService.isPremiumActive(user.uid);
+      setState(() {
+        _isPremium = isPremium;
+      });
+    } catch (e) {
+      print('Error loading premium status: $e');
+    }
+  }
+
+  Future<void> _loadMessageCount() async {
+    final user = _authService.currentUser;
+    if (user == null) return;
+
+    try {
+      final userDoc = await _userService.getUserProfile(user.uid);
+      final data = userDoc.data() ?? {};
+      final today = _dateKeyUtc(DateTime.now());
+      final messageDate = data['aiMessagesDate'] as String?;
+      final messagesToday = data['aiMessagesToday'] as int? ?? 0;
+
+      // Reset count if it's a new day
+      if (messageDate != today) {
+        setState(() {
+          _messagesToday = 0;
+        });
+      } else {
+        setState(() {
+          _messagesToday = messagesToday;
+        });
+      }
+    } catch (e) {
+      print('Error loading message count: $e');
+    }
+  }
+
+  String _dateKeyUtc(DateTime date) {
+    final year = date.year;
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+
+  Future<void> _incrementMessageCount() async {
+    final user = _authService.currentUser;
+    if (user == null) return;
+
+    final today = _dateKeyUtc(DateTime.now());
+    final userDoc = await _userService.getUserProfile(user.uid);
+    final data = userDoc.data() ?? {};
+    final messageDate = data['aiMessagesDate'] as String?;
+    final currentCount = data['aiMessagesToday'] as int? ?? 0;
+
+    // Reset if new day
+    final newCount = messageDate == today ? currentCount + 1 : 1;
+
+    await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+      'aiMessagesToday': newCount,
+      'aiMessagesDate': today,
+    });
+
+    setState(() {
+      _messagesToday = newCount;
+    });
   }
 
   @override
@@ -49,6 +132,14 @@ class _ChatbotPageState extends State<ChatbotPage> {
     final text = _messageController.text.trim();
     if (text.isEmpty || _isLoading) return;
 
+    // Check message limit for free users
+    if (!_isPremium) {
+      if (_messagesToday >= FREE_MESSAGE_LIMIT) {
+        _showUpgradeDialog();
+        return;
+      }
+    }
+
     setState(() {
       _messages.add(ChatMessage(
         text: text,
@@ -64,6 +155,11 @@ class _ChatbotPageState extends State<ChatbotPage> {
     try {
       final response = await _airiaService.sendMessage(text);
       
+      // Increment message count for free users
+      if (!_isPremium) {
+        await _incrementMessageCount();
+      }
+
       setState(() {
         _messages.add(ChatMessage(
           text: response,
@@ -87,6 +183,50 @@ class _ChatbotPageState extends State<ChatbotPage> {
     _scrollToBottom();
   }
 
+  void _showUpgradeDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.stars, color: Color(0xFF7B61FF)),
+            SizedBox(width: 8),
+            Text('Message Limit Reached'),
+          ],
+        ),
+        content: Text(
+          'You\'ve used all $FREE_MESSAGE_LIMIT free messages today. Upgrade to Premium for unlimited AI access!',
+          style: const TextStyle(fontSize: 15),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Maybe Later',
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ShopPage()),
+              );
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF7B61FF),
+            ),
+            child: const Text('Upgrade to Premium'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -108,6 +248,24 @@ class _ChatbotPageState extends State<ChatbotPage> {
       ),
       body: Column(
         children: [
+          // Message limit indicator for free users
+          if (!_isPremium)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Colors.orange.withOpacity(0.1),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: cs.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Messages today: $_messagesToday/$FREE_MESSAGE_LIMIT',
+                    style: text.bodySmall?.copyWith(color: cs.primary),
+                  ),
+                ],
+              ),
+            ),
+          
           // Messages list
           Expanded(
             child: ListView.builder(

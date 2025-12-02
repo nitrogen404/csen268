@@ -9,10 +9,12 @@ import '../widgets/animated_list_item.dart';
 import '../services/auth_service.dart';
 import '../services/chain_service.dart';
 import '../services/notification_service.dart';
+import '../services/shop_service.dart';
 import '../models/chain.dart';
 import '../models/profile.dart';
 import 'settings_page.dart';
 import 'chain_detail_page.dart';
+import 'shop_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -138,10 +140,61 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       );
     } catch (e) {
       if (!mounted) return;
-      setState(() => _joinError = e.toString());
+      final errorMessage = e.toString();
+      if (errorMessage.contains('Free users can only have')) {
+        _showUpgradeDialog();
+      } else {
+        setState(() {
+          _joinError = errorMessage;
+        });
+      }
     } finally {
       if (mounted) setState(() => _isJoining = false);
     }
+  }
+
+  void _showUpgradeDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.stars, color: Color(0xFF7B61FF)),
+            SizedBox(width: 8),
+            Text('Chain Limit Reached'),
+          ],
+        ),
+        content: const Text(
+          'Free users can only have 2 active chains. Upgrade to Premium for unlimited chains and more features!',
+          style: TextStyle(fontSize: 15),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Maybe Later',
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ShopPage()),
+              );
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF7B61FF),
+            ),
+            child: const Text('Upgrade to Premium'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _scanAndJoin() async {
