@@ -4,10 +4,10 @@ class AppColors {
   static const Color primaryPurple = Color(0xFF7B61FF);
   static const Color accentPurple = Color(0xFFFF6EC7);
 
-  static const Color statTotalChains = primaryPurple;
-  static const Color statLongestStreak = Color(0xFFFF9900);
-  static const Color statCheckIns = Color(0xFF3CB371);
-  static const Color statSuccessRate = accentPurple;
+  static const Color statTotalChains = Color(0xFF2196F3); // Blue for people icon
+  static const Color statLongestStreak = Color(0xFFFFA500); // Orange/yellow for fire icon
+  static const Color statCheckIns = Color(0xFFE53935); // Red for calendar icon
+  static const Color statSuccessRate = Color(0xFF4CAF50); // Green for up arrow
 }
 
 class ProfileStat {

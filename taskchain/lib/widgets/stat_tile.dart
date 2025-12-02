@@ -4,12 +4,14 @@ class StatTile extends StatelessWidget {
   final IconData icon;
   final String value;
   final String label;
+  final Color? iconColor;
 
   const StatTile({
     super.key,
     required this.icon,
     required this.value,
     required this.label,
+    this.iconColor,
   });
 
   @override
@@ -26,7 +28,7 @@ class StatTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: cs.onPrimaryContainer),
+            Icon(icon, color: iconColor ?? cs.onPrimaryContainer),
             const SizedBox(height: 10),
             Text(
               value,

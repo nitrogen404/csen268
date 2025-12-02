@@ -5,6 +5,9 @@ import '../services/auth_service.dart';
 import '../pages/sign_in_page.dart';
 import '../cubits/settings_cubit.dart';
 import '../models/app_settings.dart';
+import 'help_support_page.dart';
+import 'privacy_policy_page.dart';
+import 'about_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({Key? key}) : super(key: key);
@@ -150,21 +153,39 @@ class _SettingsPageState extends State<SettingsPage> {
                 color: Colors.blueAccent,
                 title: "Help & Support",
                 subtitle: "Get help with TaskChain",
-                onTap: () {},
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const HelpSupportPage(),
+                    ),
+                  );
+                },
               ),
               _cardTile(
                 icon: Icons.privacy_tip_outlined,
                 color: Colors.green,
                 title: "Privacy Policy",
                 subtitle: "How we protect your data",
-                onTap: () {},
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const PrivacyPolicyPage(),
+                    ),
+                  );
+                },
               ),
               _cardTile(
                 icon: Icons.info_outline,
                 color: Colors.grey,
                 title: "About TaskChain",
                 subtitle: "Version 1.0.0",
-                onTap: () {},
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AboutPage(),
+                    ),
+                  );
+                },
               ),
 
               const SizedBox(height: 8),

@@ -20,6 +20,8 @@ import '../services/toast_notification_service.dart';
 import '../services/chain_service.dart';
 import '../services/friend_service.dart';
 import '../models/message.dart';
+import 'chain_media_widgets.dart';
+import 'full_screen_image_page.dart';
 
 class ChainDetailPage extends StatefulWidget {
   final String chainId;
@@ -61,6 +63,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   bool _isRecording = false;
   bool _isDeleting = false;
   bool _isOwner = false;
+  Set<String> _friendEmails = {};
 
   @override
   void initState() {
@@ -68,6 +71,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     _markAsRead();
     ToastNotificationService().setCurrentChain(widget.chainId);
     _loadOwnership();
+    _loadFriends();
 
     // Listen to chain membership for the current user; if their member
     // document goes away (e.g., chain deleted or they are removed),
@@ -161,6 +165,33 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
       }
     } catch (_) {
       // Ignore errors; simply hide owner-only actions.
+    }
+  }
+
+  Future<void> _loadFriends() async {
+    final user = _authService.currentUser;
+    if (user == null) return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('friends')
+          .get();
+      final emails = <String>{};
+      for (final d in snap.docs) {
+        final data = d.data();
+        final email = (data['email'] as String?) ?? '';
+        if (email.isNotEmpty) {
+          emails.add(email.toLowerCase());
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _friendEmails = emails;
+        });
+      }
+    } catch (_) {
+      // Non-critical; we just won't hide the add friend button.
     }
   }
 
@@ -424,16 +455,10 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
             onPressed: _showMembersSheet,
             color: Colors.white, // Make icons white to match header
           ),
-          IconButton(
-            icon: const Icon(Icons.share_outlined),
-            onPressed: _showShareSheet,
-            color: Colors.white, // Make icons white to match header
-          ),
           if (_isOwner)
             IconButton(
-              icon: const Icon(Icons.delete_outline),
+              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
               onPressed: _confirmDeleteChain,
-              color: Colors.white,
             ),
         ],
         backgroundColor: Colors.transparent,
@@ -506,23 +531,24 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
           Row(
             children: [
               Expanded(child: _buildProgressSection()),
-              const Icon(Icons.group, color: Colors.white, size: 32),
-              const SizedBox(width: 8),
-              Text(
-                widget.members,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600),
-              )
             ],
           ),
           const SizedBox(height: 12),
-          LinearProgressIndicator(
-            value: widget.progress,
-            backgroundColor: Colors.white.withOpacity(0.3),
-            valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-            minHeight: 8,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 700),
+              tween: Tween<double>(begin: 0, end: widget.progress),
+              builder: (context, value, _) {
+                return LinearProgressIndicator(
+                  value: value.clamp(0.0, 1.0),
+                  backgroundColor: Colors.white.withOpacity(0.25),
+                  valueColor:
+                      const AlwaysStoppedAnimation<Color>(Colors.white),
+                  minHeight: 10,
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -634,11 +660,16 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          const Icon(Icons.chat_bubble_outline, color: Colors.deepPurple),
+          _HeaderChip(
+            icon: Icons.photo_library_outlined,
+            label: 'Media',
+            onTap: _showMediaSheet,
+          ),
           const SizedBox(width: 8),
-          const Text(
-            'Team Chat',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          _HeaderChip(
+            icon: Icons.check_circle_outline,
+            label: 'Check-ins',
+            onTap: _showCheckInsSheet,
           ),
           if (_isDeleting) ...[
             const SizedBox(width: 8),
@@ -741,9 +772,27 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                       color: Colors.deepPurple)),
             if (!isMe) const SizedBox(height: 4),
             if (msg.imageUrl != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(msg.imageUrl!, fit: BoxFit.cover),
+              GestureDetector(
+                onTap: () {
+                  Navigator.of(context, rootNavigator: true).push(
+                    MaterialPageRoute(
+                      builder: (_) => FullScreenImagePage(
+                        imageUrl: msg.imageUrl!,
+                        heroTag: 'chat_image_${msg.id}',
+                      ),
+                    ),
+                  );
+                },
+                child: Hero(
+                  tag: 'chat_image_${msg.id}',
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(
+                      msg.imageUrl!,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
               ),
             if (msg.imageUrl != null && msg.text.isNotEmpty)
               const SizedBox(height: 8),
@@ -947,6 +996,157 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     );
   }
 
+  void _showMediaSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        return DefaultTabController(
+          length: 2,
+          child: SafeArea(
+            top: false,
+            child: SizedBox(
+              height: MediaQuery.of(ctx).size.height * 0.7,
+              child: Column(
+                children: [
+                  const SizedBox(height: 8),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TabBar(
+                    labelColor: cs.primary,
+                    unselectedLabelColor: Colors.grey,
+                    indicatorColor: cs.primary,
+                    tabs: const [
+                      Tab(text: 'Images'),
+                      Tab(text: 'Recordings'),
+                    ],
+                  ),
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        ChainImagesGrid(chainId: widget.chainId),
+                        ChainRecordingsList(chainId: widget.chainId),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showCheckInsSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        final today = DateTime.now().toUtc();
+        final todayKey =
+            '${today.year.toString().padLeft(4, '0')}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Text(
+                  "Today's check-ins",
+                  style: Theme.of(ctx)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 260,
+                  child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: FirebaseFirestore.instance
+                        .collection('chains')
+                        .doc(widget.chainId)
+                        .collection('members')
+                        .orderBy('joinedAt', descending: false)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final docs = snapshot.data!.docs;
+                      if (docs.isEmpty) {
+                        return const Center(
+                            child: Text('No members in this chain.'));
+                      }
+
+                      return ListView.builder(
+                        itemCount: docs.length,
+                        itemBuilder: (context, index) {
+                          final data = docs[index].data();
+                          final email =
+                              (data['email'] as String?) ?? 'Unknown user';
+                          final lastCheckIn =
+                              data['lastCheckInDate'] as String?;
+                          final hasCheckedIn = lastCheckIn == todayKey;
+
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: cs.primary.withOpacity(0.1),
+                              child: Text(
+                                email[0].toUpperCase(),
+                                style: TextStyle(color: cs.primary),
+                              ),
+                            ),
+                            title:
+                                Text(email, overflow: TextOverflow.ellipsis),
+                            trailing: Icon(
+                              hasCheckedIn
+                                  ? Icons.check_circle
+                                  : Icons.cancel_outlined,
+                              color: hasCheckedIn
+                                  ? Colors.green
+                                  : Colors.redAccent,
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _showMembersSheet() {
     if (_isDeleting) return;
     showModalBottomSheet(
@@ -983,11 +1183,10 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                   TextButton.icon(
                     onPressed: () {
                       Navigator.of(context).pop();
-                      // Navigate to Profile tab where the inbox + friends live.
-                      navIndex.value = 2;
+                      _showShareSheet();
                     },
-                    icon: const Icon(Icons.person_add_alt_1_outlined),
-                    label: const Text('Add friends'),
+                    icon: const Icon(Icons.share_outlined),
+                    label: const Text('Share'),
                   ),
                 ],
               ),
@@ -1022,6 +1221,8 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                         final isOwner = role == 'owner';
 
                         final isMe = email == currentEmail;
+                        final isFriend =
+                            _friendEmails.contains(email.toLowerCase());
 
                         return ListTile(
                           leading: CircleAvatar(
@@ -1040,7 +1241,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                                   : Colors.grey.shade600,
                             ),
                           ),
-                          trailing: isMe
+                          trailing: (isMe || isFriend)
                               ? null
                               : IconButton(
                                   icon: const Icon(Icons.person_add_alt_1),
@@ -1336,6 +1537,48 @@ class _ActionChip extends StatelessWidget {
               style: TextStyle(
                 fontSize: 12,
                 color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HeaderChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _HeaderChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 18, color: Colors.deepPurple),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
               ),
             ),
           ],

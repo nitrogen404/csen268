@@ -10,6 +10,7 @@ import '../services/auth_service.dart';
 import '../services/chain_service.dart';
 import '../services/notification_service.dart';
 import '../models/chain.dart';
+import '../models/profile.dart';
 import 'settings_page.dart';
 import 'chain_detail_page.dart';
 
@@ -290,6 +291,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                               icon: Icons.local_fire_department,
                               value: '$totalDays',
                               label: 'Total Days',
+                              iconColor: AppColors.statLongestStreak, // Orange/yellow for fire
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -298,6 +300,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                               icon: Icons.group,
                               value: '$friendsActive',
                               label: 'Friends Active',
+                              iconColor: AppColors.statTotalChains, // Blue for people
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -306,6 +309,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                               icon: Icons.show_chart,
                               value: '$avgProgressPercent%',
                               label: 'Avg Progress',
+                              iconColor: AppColors.statSuccessRate, // Green for chart
                             ),
                           ),
                         ],

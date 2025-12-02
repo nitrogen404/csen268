@@ -11,6 +11,8 @@ import '../services/user_service.dart';
 import '../services/chain_service.dart';
 import '../services/friend_service.dart';
 import 'edit_profile_page.dart';
+import 'friend_profile_page.dart';
+import 'full_screen_image_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({Key? key}) : super(key: key);
@@ -62,6 +64,8 @@ class _ProfilePageState extends State<ProfilePage> {
           final email = data['email'] as String? ?? user.email ?? '';
           final isPremium = data['isPremium'] as bool? ?? false;
           final profilePictureUrl = data['profilePictureUrl'] as String?;
+          final bio = data['bio'] as String? ?? '';
+          final location = data['location'] as String? ?? '';
 
           final longestStreak = (data['longestStreak'] ?? 0).toString();
           final checkIns = (data['checkIns'] ?? 0).toString();
@@ -76,6 +80,8 @@ class _ProfilePageState extends State<ProfilePage> {
 
           final currentStreak = (data['currentStreak'] ?? 0).toString();
           final currentStreakValue = int.tryParse(currentStreak) ?? 0;
+          final longestStreakValue = int.tryParse(longestStreak) ?? 0;
+          final checkInsValue = int.tryParse(checkIns) ?? 0;
 
           return SingleChildScrollView(
             child: Column(
@@ -86,12 +92,15 @@ class _ProfilePageState extends State<ProfilePage> {
                   email: email,
                   isPremium: isPremium,
                   profilePictureUrl: profilePictureUrl,
+                  bio: bio,
+                  location: location,
                 ),
                 const SizedBox(height: 20),
                 StreamBuilder<int>(
                   stream: _chainService.streamJoinedChainCount(user.uid),
                   builder: (context, countSnap) {
                     final totalChains = countSnap.data?.toString() ?? '0';
+                    final totalChainsValue = int.tryParse(totalChains) ?? 0;
 
                     final stats = [
                       ProfileStat(
@@ -120,7 +129,18 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                     ];
 
-                    return _StatGrid(stats: stats);
+                    return Column(
+                      children: [
+                        _StatGrid(stats: stats),
+                        const SizedBox(height: 12),
+                        _AchievementsSection(
+                          currentStreak: currentStreakValue,
+                          longestStreak: longestStreakValue,
+                          checkIns: checkInsValue,
+                          totalChains: totalChainsValue,
+                        ),
+                      ],
+                    );
                   },
                 ),
                 const SizedBox(height: 16),
@@ -271,6 +291,8 @@ class _ProfileHeader extends StatelessWidget {
   final String email;
   final bool isPremium;
   final String? profilePictureUrl;
+  final String bio;
+  final String location;
 
   const _ProfileHeader({
     required this.userId,
@@ -278,6 +300,8 @@ class _ProfileHeader extends StatelessWidget {
     required this.email,
     required this.isPremium,
     this.profilePictureUrl,
+    required this.bio,
+    required this.location,
   });
 
   @override
@@ -329,28 +353,45 @@ class _ProfileHeader extends StatelessWidget {
               ),
             ),
           ),
-          // Avatar with small QR icon overlay in the bottom-right corner.
+          // Avatar with tappable full-screen preview and small QR icon overlay.
           Stack(
             alignment: Alignment.center,
             children: [
-              CircleAvatar(
-                radius: 40,
-                backgroundImage: (profilePictureUrl != null &&
-                        profilePictureUrl!.isNotEmpty)
-                    ? NetworkImage(profilePictureUrl!)
-                    : null,
-                backgroundColor: const Color(0xFFFFC72C),
-                child: (profilePictureUrl == null ||
-                        profilePictureUrl!.isEmpty)
-                    ? Text(
-                        initials,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      )
-                    : null,
+              GestureDetector(
+                onTap: () {
+                  if (profilePictureUrl == null ||
+                      profilePictureUrl!.isEmpty) return;
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => FullScreenImagePage(
+                        imageUrl: profilePictureUrl!,
+                        heroTag: 'profile_avatar_$userId',
+                      ),
+                    ),
+                  );
+                },
+                child: Hero(
+                  tag: 'profile_avatar_$userId',
+                  child: CircleAvatar(
+                    radius: 40,
+                    backgroundImage: (profilePictureUrl != null &&
+                            profilePictureUrl!.isNotEmpty)
+                        ? NetworkImage(profilePictureUrl!)
+                        : null,
+                    backgroundColor: const Color(0xFFFFC72C),
+                    child: (profilePictureUrl == null ||
+                            profilePictureUrl!.isEmpty)
+                        ? Text(
+                            initials,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 32,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          )
+                        : null,
+                  ),
+                ),
               ),
               Positioned(
                 bottom: 0,
@@ -398,6 +439,32 @@ class _ProfileHeader extends StatelessWidget {
               ),
             ),
           ),
+          const SizedBox(height: 8),
+          if (bio.isNotEmpty)
+            Text(
+              bio,
+              textAlign: TextAlign.center,
+              style: text.bodyMedium?.copyWith(
+                color: Colors.white,
+              ),
+            ),
+          if (location.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.location_on_outlined,
+                    size: 14, color: Colors.white70),
+                const SizedBox(width: 4),
+                Text(
+                  location,
+                  style: text.bodySmall?.copyWith(
+                    color: Colors.white70,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -481,6 +548,7 @@ class _StatGrid extends StatelessWidget {
                   icon: stats[0].icon,
                   value: stats[0].value,
                   label: stats[0].label,
+                  iconColor: stats[0].color,
                 ),
               ),
               const SizedBox(width: 8),
@@ -489,6 +557,7 @@ class _StatGrid extends StatelessWidget {
                   icon: stats[1].icon,
                   value: stats[1].value,
                   label: stats[1].label,
+                  iconColor: stats[1].color,
                 ),
               ),
             ],
@@ -501,6 +570,7 @@ class _StatGrid extends StatelessWidget {
                   icon: stats[2].icon,
                   value: stats[2].value,
                   label: stats[2].label,
+                  iconColor: stats[2].color,
                 ),
               ),
               const SizedBox(width: 8),
@@ -509,6 +579,7 @@ class _StatGrid extends StatelessWidget {
                   icon: stats[3].icon,
                   value: stats[3].value,
                   label: stats[3].label,
+                  iconColor: stats[3].color,
                 ),
               ),
             ],
@@ -517,6 +588,196 @@ class _StatGrid extends StatelessWidget {
       ),
     );
   }
+}
+
+class _AchievementsSection extends StatelessWidget {
+  final int currentStreak;
+  final int longestStreak;
+  final int checkIns;
+  final int totalChains;
+
+  const _AchievementsSection({
+    required this.currentStreak,
+    required this.longestStreak,
+    required this.checkIns,
+    required this.totalChains,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+
+    final achievements = [
+      _achievement(
+        title: '10-day longest streak',
+        description: 'Reach a longest streak of 10 days.',
+        achieved: longestStreak >= 10,
+        badgeAsset: 'assets/images/10_streak.png',
+      ),
+      _achievement(
+        title: '20-day longest streak',
+        description: 'Reach a longest streak of 20 days.',
+        achieved: longestStreak >= 20,
+        badgeAsset: 'assets/images/20_streak.png',
+      ),
+      _achievement(
+        title: '50-day longest streak',
+        description: 'Reach a longest streak of 50 days.',
+        achieved: longestStreak >= 50,
+        badgeAsset: 'assets/images/50_streak.png',
+      ),
+      _achievement(
+        title: '100-day longest streak',
+        description: 'Reach a longest streak of 100 days.',
+        achieved: longestStreak >= 100,
+        badgeAsset: 'assets/images/100_streak.png',
+      ),
+      _achievement(
+        title: '5-day current streak',
+        description: 'Maintain a current streak of 5 days.',
+        achieved: currentStreak >= 5,
+        badgeAsset: 'assets/images/5_current_streak.png',
+      ),
+      _achievement(
+        title: '15-day current streak',
+        description: 'Maintain a current streak of 15 days.',
+        achieved: currentStreak >= 15,
+        badgeAsset: 'assets/images/15_current_streak.png',
+      ),
+      _achievement(
+        title: '30-day current streak',
+        description: 'Maintain a current streak of 30 days.',
+        achieved: currentStreak >= 30,
+        badgeAsset: 'assets/images/30_current_streak.png',
+      ),
+      _achievement(
+        title: 'Chain builder',
+        description: 'Join or create 3 chains.',
+        achieved: totalChains >= 3,
+        badgeAsset: 'assets/images/3_chains.png',
+      ),
+      _achievement(
+        title: 'Chain collector',
+        description: 'Join or create 5 chains.',
+        achieved: totalChains >= 5,
+        badgeAsset: 'assets/images/5_chains.png',
+      ),
+      _achievement(
+        title: 'Daily grinder',
+        description: 'Complete 50 total check-ins.',
+        achieved: checkIns >= 50,
+        badgeAsset: 'assets/images/50_checkins.png',
+      ),
+    ];
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // 3 columns grid
+            final tileWidth = (constraints.maxWidth - 2 * 16) / 3;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Achievements',
+                  style:
+                      text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 16,
+                  children: achievements.map((a) {
+                    Widget icon;
+                    if (a.badgeAsset != null) {
+                      icon = Image.asset(
+                        a.badgeAsset!,
+                        width: 72,
+                        height: 72,
+                      );
+                    } else {
+                      icon = Icon(
+                        a.achieved
+                            ? Icons.emoji_events
+                            : Icons.radio_button_unchecked,
+                        color: a.achieved ? Colors.amber : Colors.grey,
+                        size: 40,
+                      );
+                    }
+
+                    if (!a.achieved) {
+                      icon = ColorFiltered(
+                        colorFilter: const ColorFilter.matrix([
+                          0.2126, 0.7152, 0.0722, 0, 0,
+                          0.2126, 0.7152, 0.0722, 0, 0,
+                          0.2126, 0.7152, 0.0722, 0, 0,
+                          0, 0, 0, 1, 0,
+                        ]),
+                        child: icon,
+                      );
+                    }
+
+                    return SizedBox(
+                      width: tileWidth,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          icon,
+                          const SizedBox(height: 4),
+                          Text(
+                            a.title,
+                            textAlign: TextAlign.center,
+                            style: text.bodySmall?.copyWith(
+                              fontWeight: a.achieved
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  _Achievement _achievement({
+    required String title,
+    required String description,
+    required bool achieved,
+    String? badgeAsset,
+  }) {
+    return _Achievement(
+      title: title,
+      description: description,
+      achieved: achieved,
+      badgeAsset: badgeAsset,
+    );
+  }
+}
+
+class _Achievement {
+  final String title;
+  final String description;
+  final bool achieved;
+  final String? badgeAsset;
+
+  _Achievement({
+    required this.title,
+    required this.description,
+    required this.achieved,
+    this.badgeAsset,
+  });
 }
 
 class _InboxSection extends StatelessWidget {
@@ -831,16 +1092,36 @@ class _InboxSection extends StatelessWidget {
                         final email = (data['email'] as String?) ?? '';
                         final friendId = (data['userId'] as String?) ?? d.id;
 
+                        String initials = '?';
+                        final trimmed = name.trim();
+                        if (trimmed.isNotEmpty) {
+                          final parts = trimmed.split(' ');
+                          initials = parts.length == 1
+                              ? parts.first.substring(0, 1).toUpperCase()
+                              : (parts.first[0] + parts.last[0]).toUpperCase();
+                        }
+
                         return ListTile(
                           contentPadding: EdgeInsets.zero,
-                          leading: CircleAvatar(
-                            backgroundColor: cs.primary.withOpacity(0.1),
-                            child: Text(
-                              name.isNotEmpty
-                                  ? name[0].toUpperCase()
-                                  : '?',
-                              style: TextStyle(color: cs.primary),
-                            ),
+                          leading: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                            stream: UserService().streamUserProfile(friendId),
+                            builder: (context, profileSnap) {
+                              final profileData = profileSnap.data?.data() ?? {};
+                              final profilePictureUrl = profileData['profilePictureUrl'] as String?;
+                              
+                              return CircleAvatar(
+                                backgroundColor: cs.primary.withOpacity(0.1),
+                                backgroundImage: (profilePictureUrl != null && profilePictureUrl.isNotEmpty)
+                                    ? NetworkImage(profilePictureUrl)
+                                    : null,
+                                child: (profilePictureUrl == null || profilePictureUrl.isEmpty)
+                                    ? Text(
+                                        initials,
+                                        style: TextStyle(color: cs.primary),
+                                      )
+                                    : null,
+                              );
+                            },
                           ),
                           title: Text(name),
                           subtitle: Text(
@@ -851,13 +1132,16 @@ class _InboxSection extends StatelessWidget {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               IconButton(
-                                icon: const Icon(Icons.person_add_alt_1),
-                                tooltip: 'Invite to chain',
+                                icon: const Icon(Icons.person_outline),
+                                tooltip: 'View profile',
                                 onPressed: () {
-                                  _showInviteToChainSheet(
-                                    context,
-                                    friendId: friendId,
-                                    friendName: name,
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => FriendProfilePage(
+                                        userId: friendId,
+                                        fallbackEmail: email,
+                                      ),
+                                    ),
                                   );
                                 },
                               ),
