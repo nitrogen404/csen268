@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+
 import '../models/profile.dart';
+import '../models/chain.dart';
+import '../pages/chain_detail_page.dart';
 import '../widgets/stat_tile.dart';
 import '../services/auth_service.dart';
 import '../services/user_service.dart';
 import '../services/chain_service.dart';
+import '../services/friend_service.dart';
 import 'edit_profile_page.dart';
 
 class ProfilePage extends StatefulWidget {
@@ -18,6 +23,7 @@ class _ProfilePageState extends State<ProfilePage> {
   final _authService = AuthService();
   final _userService = UserService();
   final _chainService = ChainService();
+  final _friendService = FriendService();
 
   @override
   Widget build(BuildContext context) {
@@ -75,6 +81,7 @@ class _ProfilePageState extends State<ProfilePage> {
             child: Column(
               children: [
                 _ProfileHeader(
+                  userId: user.uid,
                   displayName: displayName,
                   email: email,
                   isPremium: isPremium,
@@ -115,6 +122,15 @@ class _ProfilePageState extends State<ProfilePage> {
 
                     return _StatGrid(stats: stats);
                   },
+                ),
+                const SizedBox(height: 16),
+                // Inbox: friend requests + chain invites
+                _InboxSection(
+                  userId: user.uid,
+                  friendService: _friendService,
+                  chainService: _chainService,
+                  currentUserName: displayName,
+                  currentUserEmail: email,
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -250,12 +266,14 @@ class _ProfilePageState extends State<ProfilePage> {
 }
 
 class _ProfileHeader extends StatelessWidget {
+  final String userId;
   final String displayName;
   final String email;
   final bool isPremium;
   final String? profilePictureUrl;
 
   const _ProfileHeader({
+    required this.userId,
     required this.displayName,
     required this.email,
     required this.isPremium,
@@ -311,23 +329,51 @@ class _ProfileHeader extends StatelessWidget {
               ),
             ),
           ),
-          CircleAvatar(
-            radius: 40,
-            backgroundImage: (profilePictureUrl != null &&
-                    profilePictureUrl!.isNotEmpty)
-                ? NetworkImage(profilePictureUrl!)
-                : null,
-            backgroundColor: const Color(0xFFFFC72C),
-            child: (profilePictureUrl == null || profilePictureUrl!.isEmpty)
-                ? Text(
-                    initials,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
+          // Avatar with small QR icon overlay in the bottom-right corner.
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              CircleAvatar(
+                radius: 40,
+                backgroundImage: (profilePictureUrl != null &&
+                        profilePictureUrl!.isNotEmpty)
+                    ? NetworkImage(profilePictureUrl!)
+                    : null,
+                backgroundColor: const Color(0xFFFFC72C),
+                child: (profilePictureUrl == null ||
+                        profilePictureUrl!.isEmpty)
+                    ? Text(
+                        initials,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )
+                    : null,
+              ),
+              Positioned(
+                bottom: 0,
+                right: 4,
+                child: Material(
+                  color: Colors.white,
+                  shape: const CircleBorder(),
+                  elevation: 2,
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: () => _showProfileQr(context),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.qr_code_2,
+                        size: 18,
+                        color: Colors.black87,
+                      ),
                     ),
-                  )
-                : null,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 10),
           Text(
@@ -354,6 +400,66 @@ class _ProfileHeader extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  void _showProfileQr(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Text(
+                'Share your profile',
+                style: Theme.of(ctx)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 16),
+              QrImageView(
+                // Encode email so scanners can send a friend request directly.
+                data: email,
+                version: QrVersions.auto,
+                size: 180,
+                eyeStyle: QrEyeStyle(
+                  eyeShape: QrEyeShape.circle,
+                  color: cs.primary,
+                ),
+                dataModuleStyle: QrDataModuleStyle(
+                  dataModuleShape: QrDataModuleShape.circle,
+                  color: cs.primary,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                email,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 14,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -409,6 +515,472 @@ class _StatGrid extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _InboxSection extends StatelessWidget {
+  final String userId;
+  final FriendService friendService;
+  final ChainService chainService;
+  final String currentUserName;
+  final String currentUserEmail;
+
+  const _InboxSection({
+    required this.userId,
+    required this.friendService,
+    required this.chainService,
+    required this.currentUserName,
+    required this.currentUserEmail,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: Card(
+        elevation: 1,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Inbox',
+                    style: text.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  Icon(Icons.inbox_outlined, color: cs.primary),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Friend Requests
+              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: friendService.streamFriendRequests(userId),
+                builder: (context, snapshot) {
+                  final docs = snapshot.data?.docs ?? [];
+                  if (docs.isEmpty) {
+                    return const Text(
+                      'No friend requests yet.',
+                      style: TextStyle(color: Colors.grey),
+                    );
+                  }
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Friend Requests',
+                        style: text.labelLarge
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 8),
+                      ...docs.map((d) {
+                        final data = d.data();
+                        final fromName =
+                            (data['fromDisplayName'] as String?) ?? 'Friend';
+                        final fromEmail =
+                            (data['fromEmail'] as String?) ?? '';
+                        // Only pending requests are streamed; no need
+                        // to surface non-pending ones here.
+
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            backgroundColor: cs.primary.withOpacity(0.1),
+                            child: Text(
+                              fromName.isNotEmpty
+                                  ? fromName[0].toUpperCase()
+                                  : '?',
+                              style: TextStyle(color: cs.primary),
+                            ),
+                          ),
+                          title: Text(fromName),
+                          subtitle: Text(
+                            fromEmail,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.close),
+                                tooltip: 'Decline',
+                                onPressed: () async {
+                                  await friendService
+                                      .declineFriendRequest(
+                                    currentUserId: userId,
+                                    requestId: d.id,
+                                  );
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.check),
+                                tooltip: 'Accept',
+                                onPressed: () async {
+                                  await friendService
+                                      .acceptFriendRequest(
+                                    currentUserId: userId,
+                                    currentUserEmail:
+                                        currentUserEmail,
+                                    currentUserDisplayName:
+                                        currentUserName,
+                                    requestId: d.id,
+                                    requestData: data,
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 12),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+              // Chain Invites
+              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: friendService.streamChainInvites(userId),
+                builder: (context, snapshot) {
+                  final docs = snapshot.data?.docs ?? [];
+                  if (docs.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Chain Invites',
+                        style: text.labelLarge
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 8),
+                      ...docs.map((d) {
+                        final data = d.data();
+                        final chainTitle =
+                            (data['chainTitle'] as String?) ?? 'Chain';
+                        final inviterName =
+                            (data['inviterName'] as String?) ?? 'Friend';
+                        final status =
+                            (data['status'] as String?) ?? 'pending';
+                        final isPending = status == 'pending';
+
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            backgroundColor:
+                                cs.secondaryContainer.withOpacity(0.4),
+                            child: const Icon(Icons.link),
+                          ),
+                          title: Text(chainTitle),
+                          subtitle: Text('Invited by $inviterName'),
+                          trailing: isPending
+                              ? Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.close),
+                                      tooltip: 'Ignore',
+                                      onPressed: () async {
+                                        await friendService
+                                            .updateChainInviteStatus(
+                                          currentUserId: userId,
+                                          inviteId: d.id,
+                                          status: 'declined',
+                                        );
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.check),
+                                      tooltip: 'Accept & join',
+                                      onPressed: () async {
+                                        final rawCode =
+                                            (data['chainCode'] as String?) ??
+                                                '';
+                                        final code = rawCode.trim();
+                                        if (code.isEmpty) {
+                                          return;
+                                        }
+                                        try {
+                                          // First ensure the chain still exists.
+                                          final query = await FirebaseFirestore
+                                              .instance
+                                              .collection('chains')
+                                              .where('code', isEqualTo: code)
+                                              .limit(1)
+                                              .get();
+
+                                          if (query.docs.isEmpty) {
+                                            // Chain was deleted or no longer valid.
+                                            await friendService
+                                                .updateChainInviteStatus(
+                                              currentUserId: userId,
+                                              inviteId: d.id,
+                                              status: 'declined',
+                                            );
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                      'This chain no longer exists. Invite removed.'),
+                                                ),
+                                              );
+                                            }
+                                            return;
+                                          }
+
+                                          // Join the existing chain.
+                                          await chainService.joinChainByCode(
+                                            userId: userId,
+                                            userEmail: currentUserEmail,
+                                            code: code,
+                                          );
+
+                                          await friendService
+                                              .updateChainInviteStatus(
+                                            currentUserId: userId,
+                                            inviteId: d.id,
+                                            status: 'accepted',
+                                          );
+
+                                          // Navigate directly to the joined chain.
+                                          if (context.mounted) {
+                                            final doc = query.docs.first;
+                                            final chain =
+                                                Chain.fromFirestore(doc);
+                                            Navigator.of(context).push(
+                                              MaterialPageRoute(
+                                                builder: (_) => ChainDetailPage(
+                                                  chainId: chain.id,
+                                                  chainTitle: chain.title,
+                                                  members: chain.members,
+                                                  progress: chain.progress,
+                                                  code: chain.code,
+                                                  theme: chain.theme,
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        } catch (e) {
+                                          // On any error, keep the invite but show feedback.
+                                          if (context.mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  'Failed to join chain: $e',
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                )
+                              : Text(
+                                  status[0].toUpperCase() +
+                                      status.substring(1),
+                                  style: const TextStyle(
+                                      fontSize: 12, color: Colors.grey),
+                                ),
+                        );
+                      }),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+              // Friends list (for inviting to chains etc.)
+              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: friendService.streamFriends(userId),
+                builder: (context, snapshot) {
+                  final docs = snapshot.data?.docs ?? [];
+                  if (docs.isEmpty) {
+                    return const Text(
+                      'No friends yet. Add friends from the Members list.',
+                      style: TextStyle(color: Colors.grey),
+                    );
+                  }
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 4),
+                      Text(
+                        'Friends',
+                        style: text.labelLarge
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 8),
+                      ...docs.map((d) {
+                        final data = d.data();
+                        final name =
+                            (data['displayName'] as String?) ?? 'Friend';
+                        final email = (data['email'] as String?) ?? '';
+                        final friendId = (data['userId'] as String?) ?? d.id;
+
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            backgroundColor: cs.primary.withOpacity(0.1),
+                            child: Text(
+                              name.isNotEmpty
+                                  ? name[0].toUpperCase()
+                                  : '?',
+                              style: TextStyle(color: cs.primary),
+                            ),
+                          ),
+                          title: Text(name),
+                          subtitle: Text(
+                            email,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.person_add_alt_1),
+                                tooltip: 'Invite to chain',
+                                onPressed: () {
+                                  _showInviteToChainSheet(
+                                    context,
+                                    friendId: friendId,
+                                    friendName: name,
+                                  );
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.remove_circle_outline),
+                                tooltip: 'Remove friend',
+                                onPressed: () async {
+                                  final confirmed =
+                                      await showDialog<bool>(
+                                    context: context,
+                                    builder: (ctx) => AlertDialog(
+                                      title: const Text('Remove friend?'),
+                                      content: Text(
+                                          'Are you sure you want to remove $name from your friends?'),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.of(ctx).pop(false),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.of(ctx).pop(true),
+                                          child: const Text(
+                                            'Remove',
+                                            style: TextStyle(
+                                              color: Colors.redAccent,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+
+                                  if (confirmed == true) {
+                                    await friendService.removeFriend(
+                                      currentUserId: userId,
+                                      friendUserId: friendId,
+                                    );
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showInviteToChainSheet(
+    BuildContext context, {
+    required String friendId,
+    required String friendName,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Invite $friendName to a chain',
+                style: Theme.of(ctx)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 220,
+                child: StreamBuilder<List<Chain>>(
+                  stream: chainService.streamJoinedChains(userId),
+                  builder: (context, snapshot) {
+                    final chains = snapshot.data ?? [];
+                    if (chains.isEmpty) {
+                      return const Center(
+                        child: Text('You have no chains yet.'),
+                      );
+                    }
+
+                    return ListView.builder(
+                      itemCount: chains.length,
+                      itemBuilder: (context, index) {
+                        final c = chains[index];
+                        return ListTile(
+                          title: Text(c.title),
+                          subtitle: Text('${c.members} • ${c.days}'),
+                          onTap: () async {
+                            Navigator.of(ctx).pop();
+                            await friendService.sendChainInvite(
+                              toUserId: friendId,
+                              chainId: c.id,
+                              chainTitle: c.title,
+                              chainCode: c.code,
+                              inviterId: userId,
+                              inviterEmail: currentUserEmail,
+                              inviterName: currentUserName,
+                            );
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

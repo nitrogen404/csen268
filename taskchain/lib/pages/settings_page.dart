@@ -20,15 +20,15 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     return BlocBuilder<SettingsCubit, SettingsState>(
       builder: (context, state) {
-        final AppSettings settings =
-            state.settings ?? const AppSettings();
+        final AppSettings settings = state.settings ?? const AppSettings();
+        final cs = Theme.of(context).colorScheme;
 
         return Scaffold(
-          backgroundColor: Colors.white,
+          backgroundColor: cs.background,
           appBar: AppBar(
-            title: const Text("Settings", style: TextStyle(color: Colors.black)),
-            backgroundColor: Colors.white,
-            foregroundColor: Colors.black,
+            title: const Text("Settings"),
+            backgroundColor: cs.surface,
+            foregroundColor: cs.onSurface,
             elevation: 0,
           ),
           body: ListView(
@@ -61,18 +61,24 @@ class _SettingsPageState extends State<SettingsPage> {
               _sectionHeader("PREFERENCES"),
 
               ListTile(
-                leading:
-                    const Icon(Icons.dark_mode_outlined, color: Colors.deepPurple),
-                title: const Text("Theme",
-                    style: TextStyle(
-                        fontWeight: FontWeight.w500, color: Colors.black)),
+                leading: const Icon(
+                  Icons.dark_mode_outlined,
+                  color: Colors.deepPurple,
+                ),
+                title: Text(
+                  "Theme",
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w500),
+                ),
                 subtitle: Text(
                   settings.darkMode == 'dark'
                       ? 'Dark'
                       : settings.darkMode == 'light'
                           ? 'Light'
                           : 'System',
-                  style: const TextStyle(color: Colors.black87),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
                 trailing: DropdownButton<String>(
                   value: settings.darkMode,
@@ -99,14 +105,20 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
 
               ListTile(
-                leading:
-                    const Icon(Icons.language_outlined, color: Colors.green),
-                title: const Text("Language",
-                    style: TextStyle(
-                        fontWeight: FontWeight.w500, color: Colors.black)),
+                leading: const Icon(
+                  Icons.language_outlined,
+                  color: Colors.green,
+                ),
+                title: Text(
+                  "Language",
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(fontWeight: FontWeight.w500),
+                ),
                 subtitle: Text(
                   settings.language.toUpperCase(),
-                  style: const TextStyle(color: Colors.black87),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
                 trailing: DropdownButton<String>(
                   value: settings.language,
@@ -209,6 +221,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Widget _sectionHeader(String title) {
+    final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(left: 4, top: 16, bottom: 6),
       child: Text(
@@ -230,13 +243,21 @@ class _SettingsPageState extends State<SettingsPage> {
     required bool value,
     required Function(bool) onChanged,
   }) {
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
     return SwitchListTile(
-      secondary: Icon(icon, color: Colors.deepPurple),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500, color: Colors.black)),
-      subtitle: Text(subtitle, style: const TextStyle(color: Colors.black87)),
+      secondary: Icon(icon, color: cs.primary),
+      title: Text(
+        title,
+        style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: text.bodySmall,
+      ),
       value: value,
       onChanged: onChanged,
-      activeColor: Colors.deepPurple,
+      activeColor: cs.primary,
     );
   }
 
@@ -247,15 +268,17 @@ class _SettingsPageState extends State<SettingsPage> {
     required String subtitle,
     required VoidCallback onTap,
   }) {
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cs.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: cs.outlineVariant),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.05),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 5,
             offset: const Offset(0, 3),
           ),
@@ -263,15 +286,22 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
       child: ListTile(
         leading: Icon(icon, color: color),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500, color: Colors.black)),
-        subtitle: Text(subtitle, style: const TextStyle(color: Colors.black87)),
+        title: Text(
+          title,
+          style: text.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: text.bodySmall,
+        ),
         onTap: onTap,
       ),
     );
   }
 
   Widget _sectionDivider() {
-    return Divider(color: Colors.grey.shade200, thickness: 1, height: 20);
+    final cs = Theme.of(context).colorScheme;
+    return Divider(color: cs.outlineVariant, thickness: 1, height: 20);
   }
 
   // Updated sign-out logic
@@ -280,15 +310,14 @@ class _SettingsPageState extends State<SettingsPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text("Sign Out", style: TextStyle(color: Colors.black)),
+        title: const Text("Sign Out"),
         content: const Text(
           "Are you sure you want to log out of your account?",
-          style: TextStyle(color: Colors.black87),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel", style: TextStyle(color: Colors.black87)),
+            child: const Text("Cancel"),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(

@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -10,11 +12,13 @@ import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../main.dart';
 import '../services/message_service.dart';
 import '../services/auth_service.dart';
 import '../services/notification_badge_service.dart';
 import '../services/toast_notification_service.dart';
 import '../services/chain_service.dart';
+import '../services/friend_service.dart';
 import '../models/message.dart';
 
 class ChainDetailPage extends StatefulWidget {
@@ -44,26 +48,87 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   final AuthService _authService = AuthService();
   final NotificationBadgeService _badgeService = NotificationBadgeService();
   final ChainService _chainService = ChainService();
+  final FriendService _friendService = FriendService();
 
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
   final Map<String, String> _nameCache = {};
   final AudioRecorder _audioRecorder = AudioRecorder();
-  
+
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _chainSub;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _memberSub;
   bool _isRecording = false;
-  
+  bool _isDeleting = false;
+  bool _isOwner = false;
 
   @override
   void initState() {
     super.initState();
     _markAsRead();
     ToastNotificationService().setCurrentChain(widget.chainId);
+    _loadOwnership();
+
+    // Listen to chain membership for the current user; if their member
+    // document goes away (e.g., chain deleted or they are removed),
+    // immediately send them back home.
+    final user = _authService.currentUser;
+    if (user != null) {
+      _memberSub = FirebaseFirestore.instance
+          .collection('chains')
+          .doc(widget.chainId)
+          .collection('members')
+          .doc(user.uid)
+          .snapshots()
+          .listen((snap) {
+        if (!snap.exists && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('You are no longer a member of this chain.'),
+            ),
+          );
+          Navigator.of(context).popUntil((route) => route.isFirst);
+          navIndex.value = 0;
+        }
+      }, onError: (error) {
+        if (!mounted) return;
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        navIndex.value = 0;
+      });
+    }
+
+    // Listen for chain document changes so if the chain is deleted while this
+    // screen is open (e.g., by the owner), all members are gracefully navigated
+    // back to the home screen.
+    _chainSub = FirebaseFirestore.instance
+        .collection('chains')
+        .doc(widget.chainId)
+        .snapshots()
+        .listen((snap) {
+      if (!snap.exists && mounted) {
+        // Ensure we don't show multiple snackbars if this fires more than once.
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This chain has been deleted.')),
+        );
+        // Navigate back to the root (home tab) for all users.
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        navIndex.value = 0;
+      }
+    }, onError: (error) {
+      // If we lose permission to read this chain (e.g., it was deleted and
+      // security rules no longer allow access), treat it the same as a
+      // deletion and send the user back home.
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      navIndex.value = 0;
+    });
   }
 
   @override
   void dispose() {
     ToastNotificationService().setCurrentChain(null);
+    _chainSub?.cancel();
+    _memberSub?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     _audioRecorder.dispose();
@@ -74,6 +139,28 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     final user = _authService.currentUser;
     if (user != null) {
       await _badgeService.markChainAsRead(widget.chainId, user.uid);
+    }
+  }
+
+  Future<void> _loadOwnership() async {
+    final user = _authService.currentUser;
+    if (user == null) return;
+
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('chains')
+          .doc(widget.chainId)
+          .get();
+      final data = snap.data() as Map<String, dynamic>?;
+      if (data == null) return;
+      final ownerId = data['ownerId'] as String? ?? '';
+      if (mounted) {
+        setState(() {
+          _isOwner = ownerId == user.uid;
+        });
+      }
+    } catch (_) {
+      // Ignore errors; simply hide owner-only actions.
     }
   }
 
@@ -342,6 +429,12 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
             onPressed: _showShareSheet,
             color: Colors.white, // Make icons white to match header
           ),
+          if (_isOwner)
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              onPressed: _confirmDeleteChain,
+              color: Colors.white,
+            ),
         ],
         backgroundColor: Colors.transparent,
         foregroundColor: Colors.white, // Make back button white
@@ -491,21 +584,85 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     }
   }
 
+  Future<void> _confirmDeleteChain() async {
+    if (_isDeleting) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Delete chain?'),
+          content: const Text(
+              'This will remove the chain for all members. This action cannot be undone.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    final user = _authService.currentUser;
+    if (user == null) return;
+
+    // Capture ids before navigating away.
+    final chainId = widget.chainId;
+    final requesterId = user.uid;
+
+    // First navigate the owner back home for an immediate UX response.
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    navIndex.value = 0;
+
+    // Then perform the delete in the background so all members are
+    // kicked back to home via their listeners.
+    unawaited(_chainService.deleteChain(
+      chainId: chainId,
+      requesterId: requesterId,
+    ));
+  }
+
   Widget _buildChatHeader() {
-    return const Padding(
-      padding: EdgeInsets.all(16),
+    return Padding(
+      padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          Icon(Icons.chat_bubble_outline, color: Colors.deepPurple),
-          SizedBox(width: 8),
-          Text('Team Chat',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Icon(Icons.chat_bubble_outline, color: Colors.deepPurple),
+          const SizedBox(width: 8),
+          const Text(
+            'Team Chat',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          if (_isDeleting) ...[
+            const SizedBox(width: 8),
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ],
         ],
       ),
     );
   }
 
   Widget _buildMessageList() {
+    if (_isDeleting) {
+      // While deleting, avoid attaching listeners to messages to prevent
+      // noisy permission errors and just show an empty area.
+      return const Expanded(
+        child: Center(
+          child: SizedBox.shrink(),
+        ),
+      );
+    }
     return Expanded(
       child: StreamBuilder<List<Message>>(
         stream: _messageService.getChainMessages(widget.chainId),
@@ -633,74 +790,165 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   }
 
   Widget _buildMessageInput() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: const BoxDecoration(
-        color: Colors.transparent,
-      ),
-      child: SafeArea(
-        child: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.camera_alt_outlined),
-              color: Colors.white,
-              onPressed: () => _pickImage(fromCamera: true),
-            ),
-            IconButton(
-              icon: const Icon(Icons.photo_library_outlined),
-              color: Colors.white,
-              onPressed: () => _pickImage(fromCamera: false),
-            ),
-            IconButton(
-              icon: Icon(
-                _isRecording ? Icons.stop : Icons.mic,
-                color: _isRecording ? Colors.red : Colors.white,
-              ),
-              onPressed: _isRecording ? _stopRecording : _startRecording,
-            ),
-            // Live dB meter removed for a cleaner recording UI
-            Expanded(
-              child: TextField(
-                controller: _messageController,
-                style: const TextStyle(color: Colors.black),
-                decoration: InputDecoration(
-                  hintText: 'Type a message...',
-                  filled: true,
-                  fillColor: Colors.grey.shade100,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
+    return SafeArea(
+      top: false,
+      child: Padding(
+        // No padding above; just a small gap from the screen edge.
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        child: SizedBox(
+          height: 52,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(26),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.85),
+                  borderRadius: BorderRadius.circular(26),
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  child: Row(
+                    children: [
+                      // Glassy circular "+" button to open actions drawer.
+                      Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0xFF7B61FF).withOpacity(0.6),
+                            width: 1.6,
+                          ),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.add,
+                            color: Color(0xFF7B61FF),
+                          ),
+                          padding: const EdgeInsets.all(8),
+                          constraints: const BoxConstraints(),
+                          onPressed: _showInputActionsSheet,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Message text field
+                      Expanded(
+                        child: TextField(
+                          controller: _messageController,
+                          style: const TextStyle(
+                            color: Colors.black87,
+                            fontSize: 15,
+                          ),
+                          decoration: const InputDecoration(
+                            hintText: 'Type a message...',
+                            border: InputBorder.none,
+                            isDense: true,
+                          ),
+                          maxLines: 1,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => _sendMessage(),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // Gradient circular send button
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF7B61FF), Color(0xFFFF6EC7)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.send, color: Colors.white),
+                          padding: EdgeInsets.zero,
+                          onPressed: _sendMessage,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                maxLines: null,
-                textInputAction: TextInputAction.send,
-                onSubmitted: (_) => _sendMessage(),
               ),
             ),
-            const SizedBox(width: 12),
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF7B61FF), Color(0xFFFF6EC7)],
-                ),
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                onPressed: _sendMessage,
-                icon: const Icon(Icons.send, color: Colors.white),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
+  void _showInputActionsSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Add to message',
+                  style: Theme.of(ctx)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _ActionChip(
+                      icon: Icons.camera_alt_outlined,
+                      label: 'Camera',
+                      color: cs.primary,
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _pickImage(fromCamera: true);
+                      },
+                    ),
+                    _ActionChip(
+                      icon: Icons.photo_library_outlined,
+                      label: 'Gallery',
+                      color: cs.secondary,
+                      onTap: () {
+                        Navigator.of(ctx).pop();
+                        _pickImage(fromCamera: false);
+                      },
+                    ),
+                    _ActionChip(
+                      icon: _isRecording ? Icons.stop : Icons.mic,
+                      label: _isRecording ? 'Stop' : 'Voice',
+                      color: Colors.redAccent,
+                      onTap: () async {
+                        Navigator.of(ctx).pop();
+                        if (_isRecording) {
+                          await _stopRecording();
+                        } else {
+                          await _startRecording();
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _showMembersSheet() {
+    if (_isDeleting) return;
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -722,12 +970,26 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              Text(
-                'Chain Members',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(fontWeight: FontWeight.w700),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Chain Members',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      // Navigate to Profile tab where the inbox + friends live.
+                      navIndex.value = 2;
+                    },
+                    icon: const Icon(Icons.person_add_alt_1_outlined),
+                    label: const Text('Add friends'),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
               SizedBox(
@@ -748,13 +1010,18 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                       return const Center(child: Text('No members yet.'));
                     }
 
+                    final currentEmail =
+                        _authService.currentUser?.email ?? '';
+
                     return ListView.builder(
                       itemCount: docs.length,
                       itemBuilder: (context, index) {
                         final data = docs[index].data();
-                        final email = data['email'] ?? 'Unknown';
+                        final email = (data['email'] ?? 'Unknown') as String;
                         final role = data['role'] ?? 'member';
                         final isOwner = role == 'owner';
+
+                        final isMe = email == currentEmail;
 
                         return ListTile(
                           leading: CircleAvatar(
@@ -773,6 +1040,48 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                                   : Colors.grey.shade600,
                             ),
                           ),
+                          trailing: isMe
+                              ? null
+                              : IconButton(
+                                  icon: const Icon(Icons.person_add_alt_1),
+                                  tooltip: 'Add friend',
+                                  onPressed: () async {
+                                    final currentUser =
+                                        _authService.currentUser;
+                                    if (currentUser == null) return;
+
+                                    try {
+                                      final displayName =
+                                          await _getMyDisplayName();
+                                      await _friendService.sendFriendRequest(
+                                        fromUserId: currentUser.uid,
+                                        fromEmail:
+                                            currentUser.email ?? '',
+                                        fromDisplayName: displayName,
+                                        targetEmail: email,
+                                      );
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                                'Friend request sent to $email'),
+                                          ),
+                                        );
+                                      }
+                                    } catch (e) {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                                'Could not send friend request: $e'),
+                                          ),
+                                        );
+                                      }
+                                    }
+                                  },
+                                ),
                         );
                       },
                     );
@@ -988,6 +1297,49 @@ class _AudioPlayerWidgetState extends State<_AudioPlayerWidget> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ActionChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ActionChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

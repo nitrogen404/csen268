@@ -256,7 +256,60 @@ class ChainService {
     });
   }
 
-  // ---------------------------------------------------------------------------
+  /// Delete an entire chain and its direct subcollections (members, messages).
+  /// Only the owner is allowed to delete; if requesterId is not the owner,
+  /// this will throw.
+  Future<void> deleteChain({
+    required String chainId,
+    required String requesterId,
+  }) async {
+    final chainRef = _firestore.collection('chains').doc(chainId);
+    final snap = await chainRef.get();
+    if (!snap.exists) {
+      throw 'Chain no longer exists.';
+    }
+
+    final data = snap.data() as Map<String, dynamic>? ?? {};
+    final ownerId = data['ownerId'] as String? ?? '';
+    if (ownerId != requesterId) {
+      throw 'Only the chain owner can delete this chain.';
+    }
+
+    // Best-effort cleanup helper: delete all docs in a subcollection in batches.
+    Future<void> _deleteCollection(
+        CollectionReference<Map<String, dynamic>> col) async {
+      const batchSize = 50;
+      while (true) {
+        final snap = await col.limit(batchSize).get();
+        if (snap.docs.isEmpty) break;
+        final batch = _firestore.batch();
+        for (final doc in snap.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+      }
+    }
+
+    // 1) Delete all members (this is what actually "kicks" people out).
+    await _deleteCollection(chainRef.collection('members'));
+
+    // 2) Delete the chain document itself so it no longer appears anywhere.
+    //    Do this BEFORE attempting to delete messages so a messages
+    //    permission error cannot block removal of the parent chain.
+    await chainRef.delete();
+
+    // 3) Best-effort background cleanup of messages. Even if this fails due to
+    //    security rules, orphaned messages will no longer be readable once
+    //    the parent chain document is gone (given typical security patterns).
+    () async {
+      try {
+        await _deleteCollection(chainRef.collection('messages'));
+      } catch (_) {
+        // Swallow silently; function's primary responsibility (removing chain)
+        // has already succeeded.
+      }
+    }();
+  }
 
   Future<String> _generateUniqueCode() async {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

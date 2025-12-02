@@ -1,3 +1,7 @@
+import 'dart:ui';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
@@ -6,10 +10,10 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
 
-  // Initialize notifications
+  // Initialize notifications (call once on app start)
   Future<void> initialize() async {
-    // Request permission for iOS
-    NotificationSettings settings = await _firebaseMessaging.requestPermission(
+    // Request permission for notifications
+    final settings = await _firebaseMessaging.requestPermission(
       alert: true,
       badge: true,
       sound: true,
@@ -17,31 +21,29 @@ class NotificationService {
     );
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      print('User granted permission');
+      print('User granted notification permission');
     } else {
-      print('User declined or has not accepted permission');
+      print('User declined or has not accepted notification permission');
     }
 
     // Initialize local notifications
-    const AndroidInitializationSettings androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
-    
-    const DarwinInitializationSettings iosSettings =
-        DarwinInitializationSettings(
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    const iosSettings = DarwinInitializationSettings(
       requestSoundPermission: true,
       requestBadgePermission: true,
       requestAlertPermission: true,
     );
 
-    const InitializationSettings initSettings = InitializationSettings(
+    const initSettings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
     );
 
     await _localNotifications.initialize(
       initSettings,
-      onDidReceiveNotificationResponse: (NotificationResponse response) {
-        // Handle notification tap
+      onDidReceiveNotificationResponse: (response) {
+        // Handle notification tap (can be wired to navigation if needed)
         print('Notification tapped: ${response.payload}');
       },
     );
@@ -49,30 +51,126 @@ class NotificationService {
     // Handle foreground messages
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
 
-    // Handle background messages
+    // Handle notification taps when app is opened from background
     FirebaseMessaging.onMessageOpenedApp.listen(_handleBackgroundMessage);
 
-    // Get FCM token
-    String? token = await _firebaseMessaging.getToken();
+    // Get FCM token (useful for debugging or backend registration)
+    final token = await _firebaseMessaging.getToken();
     print('FCM Token: $token');
   }
 
   // Handle foreground messages
-  void _handleForegroundMessage(RemoteMessage message) {
+  Future<void> _handleForegroundMessage(RemoteMessage message) async {
     print('Foreground message: ${message.notification?.title}');
-    
-    // Show local notification
-    _showLocalNotification(
-      title: message.notification?.title ?? 'New Message',
-      body: message.notification?.body ?? '',
+
+    // Prefer rich data payload if available so we can surface
+    // chain name, sender name, and message text clearly.
+    final data = message.data;
+    final senderId = (data['senderId'] as String?)?.trim();
+    final sender = (data['senderName'] as String?)?.trim();
+    final text = (data['text'] as String?)?.trim();
+    String? chainTitle = (data['chainTitle'] as String?)?.trim();
+    final chainId = (data['chainId'] as String?)?.trim();
+
+    // If this message was sent by the currently signed-in user,
+    // do not show a system notification. This prevents users from
+    // getting notified about their own messages.
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUid != null &&
+        senderId != null &&
+        senderId.isNotEmpty &&
+        senderId == currentUid) {
+      return;
+    }
+
+    // If chainTitle is missing but we have chainId, look it up so
+    // the banner can still show a nice chain name.
+    if ((chainTitle == null || chainTitle.isEmpty) &&
+        chainId != null &&
+        chainId.isNotEmpty) {
+      try {
+        final snap = await FirebaseFirestore.instance
+            .collection('chains')
+            .doc(chainId)
+            .get();
+        final data = snap.data();
+        if (data != null) {
+          final t = data['title'] as String?;
+          if (t != null && t.trim().isNotEmpty) {
+            chainTitle = t.trim();
+          }
+        }
+      } catch (e) {
+        // Non-fatal; fall back to whatever we have.
+        print('Failed to fetch chain title for notification: $e');
+      }
+    }
+
+    // Clean, minimal banner layout:
+    //   Title: Chain name
+    //   Body : Sender: message text
+    String title;
+    String body;
+
+    final hasChainTitle = chainTitle != null && chainTitle.isNotEmpty;
+    final hasSender = sender != null && sender.isNotEmpty;
+    final hasText = text != null && text.isNotEmpty;
+
+    if (hasChainTitle) {
+      title = chainTitle!;
+      if (hasSender && hasText) {
+        body = '$sender: $text';
+      } else if (hasSender) {
+        body = '$sender sent a message';
+      } else if (hasText) {
+        body = text!;
+      } else {
+        body = message.notification?.body ?? 'New message in $chainTitle';
+      }
+    } else if (hasSender) {
+      title = sender!;
+      if (hasText) {
+        body = text!;
+      } else {
+        body = message.notification?.body ?? 'New message';
+      }
+    } else {
+      // Last-resort generic formatting
+      title = message.notification?.title ?? 'New message';
+      body = message.notification?.body ?? (text ?? '');
+    }
+
+    await _showLocalNotification(
+      title: title,
+      body: body,
       payload: message.data.toString(),
     );
   }
 
-  // Handle background messages
+  // Handle background messages that opened the app
   void _handleBackgroundMessage(RemoteMessage message) {
     print('Background message opened: ${message.notification?.title}');
-    // Navigate to relevant screen based on message data
+    // TODO: Navigate to relevant screen based on message.data if desired.
+  }
+
+  // Public helper for simple, in-app system notifications.
+  Future<void> showSubscriptionNotification(String chainTitle) async {
+    await _showLocalNotification(
+      title: '🔔 Subscribed to "$chainTitle"',
+      body: 'You will now receive updates from this chain.',
+    );
+  }
+
+  /// Show a notification summarizing unread inbox items
+  /// (friend requests + chain invites).
+  Future<void> showInboxNotification(int unreadCount) async {
+    if (unreadCount <= 0) return;
+    await _showLocalNotification(
+      title: '📥 Inbox update',
+      body:
+          '$unreadCount new item${unreadCount == 1 ? '' : 's'} in your TaskChain inbox',
+      payload: 'inbox:$unreadCount',
+    );
   }
 
   // Show local notification
@@ -81,23 +179,34 @@ class NotificationService {
     required String body,
     String? payload,
   }) async {
-    const AndroidNotificationDetails androidDetails =
-        AndroidNotificationDetails(
-      'taskchain_messages',
-      'TaskChain Messages',
-      channelDescription: 'Notifications for TaskChain messages',
-      importance: Importance.high,
-      priority: Priority.high,
+    final androidDetails = AndroidNotificationDetails(
+      'taskchain_channel',
+      'TaskChain',
+      channelDescription: 'TaskChain notifications',
+      // Beautiful, modern, branded Android banner configuration.
+      importance: Importance.max,
+      priority: Priority.max,
+      playSound: true,
+      enableVibration: true,
+      colorized: true,
+      color: Color(0xFF4CAF50),
+      largeIcon: const DrawableResourceAndroidBitmap('taskchain_logo'),
+      styleInformation: BigTextStyleInformation(
+        body,
+        contentTitle: title,
+        htmlFormatContentTitle: true,
+        summaryText: 'TaskChain',
+      ),
       showWhen: true,
     );
 
-    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+    const iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
     );
 
-    const NotificationDetails notificationDetails = NotificationDetails(
+    final notificationDetails = NotificationDetails(
       android: androidDetails,
       iOS: iosDetails,
     );
@@ -113,10 +222,10 @@ class NotificationService {
 
   // Get FCM token
   Future<String?> getToken() async {
-    return await _firebaseMessaging.getToken();
+    return _firebaseMessaging.getToken();
   }
 
-  // Subscribe to topic
+  // Subscribe to topic (used for per-chain notifications)
   Future<void> subscribeToTopic(String topic) async {
     await _firebaseMessaging.subscribeToTopic(topic);
   }

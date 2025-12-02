@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:animations/animations.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -17,17 +19,23 @@ import 'services/chain_service.dart';
 import 'repository/settings_repository.dart';
 import 'cubits/settings_cubit.dart';
 import 'models/app_settings.dart';
+import 'services/notification_service.dart';
+import 'services/friend_service.dart';
 
 final ValueNotifier<int> navIndex = ValueNotifier<int>(0);
+final ValueNotifier<int> inboxCount = ValueNotifier<int>(0);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
 
-  SharedPreferences prefs = await SharedPreferences.getInstance();
-  bool seen = prefs.getBool('seenOnboarding') ?? false;
+  // Initialize push + local notifications once at app startup.
+  await NotificationService().initialize();
 
-  runApp(ChainzApp(showOnboarding: !seen));
+  // Always show onboarding screens before sign-in for logged-out users.
+  // (Onboarding itself still sets a flag so we can change this behavior later
+  //  if needed.)
+  runApp(const ChainzApp(showOnboarding: true));
 }
 
 class ChainzApp extends StatelessWidget {
@@ -116,6 +124,14 @@ class RootShell extends StatefulWidget {
 class _RootShellState extends State<RootShell> {
   final _pages = const [HomePage(), CreateChainStep1(), ProfilePage()];
   final _toastService = ToastNotificationService();
+  final _friendService = FriendService();
+  final _notificationService = NotificationService();
+
+  StreamSubscription? _friendReqSub;
+  StreamSubscription? _inviteSub;
+
+  int _friendReqCount = 0;
+  int _inviteCount = 0;
 
   int _currentIndex = 0;
   bool _reverse = false;
@@ -129,6 +145,18 @@ class _RootShellState extends State<RootShell> {
       if (uid != null) {
         final chainIds = await ChainService().getJoinedChainIds(uid);
         _toastService.startListening(chainIds);
+
+        // Listen for inbox changes (friend requests + chain invites).
+        _friendReqSub =
+            _friendService.streamFriendRequests(uid).listen((snapshot) {
+          _friendReqCount = snapshot.docs.length;
+          _updateInboxCount();
+        });
+        _inviteSub =
+            _friendService.streamChainInvites(uid).listen((snapshot) {
+          _inviteCount = snapshot.docs.length;
+          _updateInboxCount();
+        });
       }
     });
 
@@ -140,6 +168,8 @@ class _RootShellState extends State<RootShell> {
   void dispose() {
     navIndex.removeListener(_onNavIndexChanged);
     _toastService.dispose();
+     _friendReqSub?.cancel();
+     _inviteSub?.cancel();
     super.dispose();
   }
 
@@ -151,6 +181,14 @@ class _RootShellState extends State<RootShell> {
         _currentIndex = newIndex;
       });
     }
+  }
+
+  void _updateInboxCount() {
+    final total = _friendReqCount + _inviteCount;
+    inboxCount.value = total;
+    // Trigger a subtle system notification whenever there is unread inbox
+    // activity so users know to check their profile inbox.
+    _notificationService.showInboxNotification(total);
   }
 
   @override
@@ -176,20 +214,57 @@ class _RootShellState extends State<RootShell> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (i) => navIndex.value = i,
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home),
             label: 'Home',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.add_circle_outline),
             selectedIcon: Icon(Icons.add_circle),
             label: 'Create',
           ),
           NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
+            icon: ValueListenableBuilder<int>(
+              valueListenable: inboxCount,
+              builder: (context, count, _) {
+                if (count <= 0) {
+                  return const Icon(Icons.person_outline);
+                }
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(Icons.person_outline),
+                    Positioned(
+                      right: -6,
+                      top: -2,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        child: Text(
+                          count > 9 ? '9+' : '$count',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+            selectedIcon: const Icon(Icons.person),
             label: 'Profile',
           ),
         ],

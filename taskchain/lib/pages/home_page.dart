@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:animations/animations.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../widgets/stat_tile.dart';
 import '../widgets/chain_card_with_badge.dart';
 import '../widgets/animated_list_item.dart';
 import '../services/auth_service.dart';
 import '../services/chain_service.dart';
+import '../services/notification_service.dart';
 import '../models/chain.dart';
 import 'settings_page.dart';
 import 'chain_detail_page.dart';
@@ -20,6 +23,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin {
   final _authService = AuthService();
   final _chainService = ChainService();
+  final NotificationService _notificationService = NotificationService();
   final TextEditingController _codeController = TextEditingController();
   bool _isJoining = false;
   String? _joinError;
@@ -92,11 +96,42 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
       );
 
       if (!mounted) return;
+
       _codeController.clear();
+
+      // If this is a brand new membership, subscribe to chain notifications
+      // and show a system notification indicating subscription.
+      if (joined) {
+        try {
+          final snap = await FirebaseFirestore.instance
+              .collection('chains')
+              .where('code', isEqualTo: code)
+              .limit(1)
+              .get();
+
+          if (snap.docs.isNotEmpty) {
+            final doc = snap.docs.first;
+            final data = doc.data();
+            final chainTitle = (data['title'] as String?) ?? 'Chain';
+            final chainId = doc.id;
+
+            final topic = 'chain_$chainId';
+            await _notificationService.subscribeToTopic(topic);
+            await _notificationService.showSubscriptionNotification(chainTitle);
+          }
+        } catch (e) {
+          // If subscription fails, we still consider the join successful;
+          // log the error but don't surface it as a blocking failure.
+          debugPrint('Failed to subscribe to chain notifications: $e');
+        }
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            joined ? 'Joined chain successfully' : 'You are already a member of this chain.',
+            joined
+                ? 'Joined chain successfully'
+                : 'You are already a member of this chain.',
           ),
         ),
       );
@@ -141,14 +176,30 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
     return CustomScrollView(
       slivers: [
-        // Header Section (dynamic: depends on chain count)
+        // Header Section (dynamic: depends on chain count and stats)
         SliverToBoxAdapter(
           child: StreamBuilder<List<Chain>>(
             stream: currentUser != null
                 ? _chainService.streamJoinedChains(currentUser.uid)
                 : const Stream.empty(),
             builder: (context, snapshot) {
-              final hasChains = (snapshot.data ?? []).isNotEmpty;
+              final chains = snapshot.data ?? [];
+              final hasChains = chains.isNotEmpty;
+
+              // Derive simple, user-friendly stats from chains.
+              int totalDays = 0;
+              int friendsActive = 0;
+              int avgProgressPercent = 0;
+
+              if (hasChains) {
+                for (final c in chains) {
+                  totalDays += c.totalDaysCompleted;
+                  // All members except the current user (approximation)
+                  friendsActive += (c.memberCount - 1).clamp(0, c.memberCount);
+                  avgProgressPercent += (c.progress * 100).round();
+                }
+                avgProgressPercent = (avgProgressPercent / chains.length).round();
+              }
 
               return Container(
                 padding: const EdgeInsets.fromLTRB(20, 60, 20, 24),
@@ -230,31 +281,31 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
 
                     const SizedBox(height: 24),
 
-                    // Only show static stats if user has ≥1 chain
+                    // Dynamic stats from Firestore-backed chain data.
                     if (hasChains)
                       Row(
-                        children: const [
+                        children: [
                           Expanded(
                             child: StatTile(
                               icon: Icons.local_fire_department,
-                              value: "42",
-                              label: "Total Days",
+                              value: '$totalDays',
+                              label: 'Total Days',
                             ),
                           ),
-                          SizedBox(width: 12),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: StatTile(
                               icon: Icons.group,
-                              value: "9",
-                              label: "Friends Active",
+                              value: '$friendsActive',
+                              label: 'Friends Active',
                             ),
                           ),
-                          SizedBox(width: 12),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: StatTile(
                               icon: Icons.show_chart,
-                              value: "78%",
-                              label: "Avg Progress",
+                              value: '$avgProgressPercent%',
+                              label: 'Avg Progress',
                             ),
                           ),
                         ],

@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../main.dart';
 import '../services/chain_service.dart';
 import '../services/auth_service.dart';
+import '../services/notification_service.dart';
+import '../services/friend_service.dart';
 import 'chain_detail_page.dart';
 
 class CreateChainStep2 extends StatefulWidget {
@@ -22,18 +26,42 @@ class CreateChainStep2 extends StatefulWidget {
   State<CreateChainStep2> createState() => _CreateChainStep2State();
 }
 
-class _CreateChainStep2State extends State<CreateChainStep2> {
+class _CreateChainStep2State extends State<CreateChainStep2>
+    with SingleTickerProviderStateMixin {
   String selectedTheme = 'Ocean';
 
   final ChainService _chainService = ChainService();
   final AuthService _authService = AuthService();
+  final NotificationService _notificationService = NotificationService();
+  final FriendService _friendService = FriendService();
+
+  // Friends selected to receive chain invites after creation.
+  final Set<String> _selectedFriendIds = {};
 
   bool _isCreating = false;
+
+  late final AnimationController _inviteSpinnerController;
+
+  @override
+  void initState() {
+    super.initState();
+    _inviteSpinnerController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _inviteSpinnerController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
+    final user = _authService.currentUser;
 
     return Scaffold(
       appBar: AppBar(
@@ -130,70 +158,139 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
             ),
             const SizedBox(height: 8),
 
-            TextField(
-              decoration: InputDecoration(
-                hintText: "friend@example.com",
-                prefixIcon: const Icon(Icons.person_add_outlined),
-                filled: true,
-                fillColor: cs.surfaceVariant.withOpacity(0.5),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
+            if (user != null)
+              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: _friendService.streamFriends(user.uid),
+                builder: (context, snapshot) {
+                  final docs = snapshot.data?.docs ?? [];
+
+                  if (docs.isEmpty) {
+                    return Text(
+                      'No friends yet. You can add friends from chain members.',
+                      style: text.bodySmall?.copyWith(
+                        color: cs.onBackground.withOpacity(0.6),
+                      ),
+                    );
+                  }
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ...docs.map((d) {
+                        final data = d.data();
+                        final friendId =
+                            (data['userId'] as String?) ?? d.id;
+                        final name =
+                            (data['displayName'] as String?) ?? 'Friend';
+                        final email =
+                            (data['email'] as String?) ?? '';
+
+                        final selected =
+                            _selectedFriendIds.contains(friendId);
+
+                        return CheckboxListTile(
+                          value: selected,
+                          onChanged: (v) {
+                            setState(() {
+                              if (v == true) {
+                                _selectedFriendIds.add(friendId);
+                              } else {
+                                _selectedFriendIds.remove(friendId);
+                              }
+                            });
+                          },
+                          title: Text(name),
+                          subtitle: Text(
+                            email,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }),
+                    ],
+                  );
+                },
+              )
+            else
+              Text(
+                'Sign in to invite friends to this chain.',
+                style: text.bodySmall?.copyWith(
+                  color: cs.onBackground.withOpacity(0.6),
                 ),
               ),
-            ),
-
-            const SizedBox(height: 16),
-
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: cs.surfaceVariant.withOpacity(0.5),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: const [
-                  Expanded(
-                    child: Text(
-                      "taskchain.app/join/abc123",
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                  ),
-                  Icon(Icons.copy, size: 18),
-                ],
-              ),
-            ),
 
             const SizedBox(height: 24),
 
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: cs.surfaceVariant.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Invited Friends",
-                    style: text.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 12),
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: CircleAvatar(
-                      backgroundColor: cs.primary.withOpacity(0.1),
-                      child: const Text("SJ"),
+            if (user != null && _selectedFriendIds.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: cs.surfaceVariant.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Invited Friends",
+                      style: text.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600),
                     ),
-                    title: const Text("Sarah Johnson"),
-                    subtitle: const Text("Pending"),
-                    trailing:
-                        Icon(Icons.hourglass_empty_rounded, color: cs.primary),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: _friendService.streamFriends(user!.uid),
+                      builder: (context, snapshot) {
+                        final docs = snapshot.data?.docs ?? [];
+                        final invitedDocs = docs.where((d) {
+                          final fid =
+                              (d.data()['userId'] as String?) ?? d.id;
+                          return _selectedFriendIds.contains(fid);
+                        }).toList();
+
+                        if (invitedDocs.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+
+                        return Column(
+                          children: invitedDocs.map((d) {
+                            final data = d.data();
+                            final name =
+                                (data['displayName'] as String?) ??
+                                    'Friend';
+                            final email =
+                                (data['email'] as String?) ?? '';
+
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: CircleAvatar(
+                                backgroundColor:
+                                    cs.primary.withOpacity(0.1),
+                                child: Text(
+                                  name.isNotEmpty
+                                      ? name[0].toUpperCase()
+                                      : '?',
+                                  style: TextStyle(color: cs.primary),
+                                ),
+                              ),
+                              title: Text(name),
+                              subtitle: Text(
+                                'Pending • $email',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: RotationTransition(
+                                turns: _inviteSpinnerController,
+                                child: Icon(
+                                  Icons.hourglass_empty_rounded,
+                                  color: cs.primary,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ),
-            ),
 
             const SizedBox(height: 30),
 
@@ -288,6 +385,35 @@ class _CreateChainStep2State extends State<CreateChainStep2> {
       );
 
       if (!mounted) return;
+
+      // Owner is automatically subscribed to this chain's notifications.
+      try {
+        final topic = 'chain_${chain.id}';
+        await _notificationService.subscribeToTopic(topic);
+        await _notificationService.showSubscriptionNotification(chain.title);
+      } catch (e) {
+        // Subscription failure should not block chain creation flow.
+        debugPrint('Failed to subscribe creator to chain notifications: $e');
+      }
+
+      // Send chain invites to selected friends.
+      if (_selectedFriendIds.isNotEmpty) {
+        for (final friendId in _selectedFriendIds) {
+          try {
+            await _friendService.sendChainInvite(
+              toUserId: friendId,
+              chainId: chain.id,
+              chainTitle: chain.title,
+              chainCode: chain.code,
+              inviterId: user.uid,
+              inviterEmail: user.email ?? '',
+              inviterName: widget.habitName,
+            );
+          } catch (e) {
+            debugPrint('Failed to invite friend $friendId: $e');
+          }
+        }
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Chain created! Share your code: ${chain.code}')),
