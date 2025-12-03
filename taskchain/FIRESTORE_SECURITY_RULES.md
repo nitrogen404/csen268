@@ -139,3 +139,4 @@ match /groupReminders/{reminderId} {
 - ✅ Users can only read/update their own reminders
 - ✅ Cloud Functions can update reminders (using admin SDK) to mark as sent
 
+

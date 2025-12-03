@@ -547,10 +547,138 @@ class ChainService {
     return '$y-$m-$d';
   }
 
+  /// Calculate success rate based on check-ins and days since first chain join
+  /// Returns a percentage (0.0 - 100.0)
+  double _calculateSuccessRate({
+    required int checkIns,
+    required String? firstChainJoinDate,
+    required String today,
+  }) {
+    // If user hasn't joined any chains yet, success rate is 0
+    if (firstChainJoinDate == null || firstChainJoinDate.isEmpty) {
+      return 0.0;
+    }
+
+    // Parse the first chain join date
+    DateTime firstDate;
+    try {
+      firstDate = DateTime.utc(
+        int.parse(firstChainJoinDate.substring(0, 4)),
+        int.parse(firstChainJoinDate.substring(5, 7)),
+        int.parse(firstChainJoinDate.substring(8, 10)),
+      );
+    } catch (e) {
+      // Invalid date format, return 0
+      return 0.0;
+    }
+
+    // Parse today's date
+    DateTime todayDate;
+    try {
+      todayDate = DateTime.utc(
+        int.parse(today.substring(0, 4)),
+        int.parse(today.substring(5, 7)),
+        int.parse(today.substring(8, 10)),
+      );
+    } catch (e) {
+      // Invalid date format, return 0
+      return 0.0;
+    }
+
+    // Calculate total days from first chain join to today (inclusive)
+    // Add 1 to include both start and end days
+    final totalDays = todayDate.difference(firstDate).inDays + 1;
+
+    // If total days is 0 or negative, return 0
+    if (totalDays <= 0) {
+      return 0.0;
+    }
+
+    // Calculate success rate: (checkIns / totalDays) * 100
+    final successRate = (checkIns / totalDays) * 100.0;
+
+    // Clamp to 0-100 range
+    return successRate.clamp(0.0, 100.0);
+  }
+
+  /// Get the earliest chain join date for a user (for backfilling firstChainJoinDate)
+  Future<String?> _getEarliestChainJoinDate(String userId) async {
+    try {
+      final memberDocs = await _firestore
+          .collectionGroup('members')
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      if (memberDocs.docs.isEmpty) {
+        return null;
+      }
+
+      DateTime? earliestDate;
+
+      for (final memberDoc in memberDocs.docs) {
+        final chainRef = memberDoc.reference.parent.parent;
+        if (chainRef == null) continue;
+
+        final chainSnap = await chainRef.get();
+        if (!chainSnap.exists) continue;
+
+        final chainData = chainSnap.data() as Map<String, dynamic>? ?? {};
+        final startDate = chainData['startDate'] as Timestamp?;
+        
+        if (startDate != null) {
+          final chainStart = startDate.toDate().toUtc();
+          final chainStartKey = _dateKeyUtc(chainStart);
+          
+          if (earliestDate == null) {
+            earliestDate = DateTime.utc(
+              int.parse(chainStartKey.substring(0, 4)),
+              int.parse(chainStartKey.substring(5, 7)),
+              int.parse(chainStartKey.substring(8, 10)),
+            );
+          } else {
+            final current = DateTime.utc(
+              int.parse(chainStartKey.substring(0, 4)),
+              int.parse(chainStartKey.substring(5, 7)),
+              int.parse(chainStartKey.substring(8, 10)),
+            );
+            if (current.isBefore(earliestDate)) {
+              earliestDate = current;
+            }
+          }
+        }
+      }
+
+      if (earliestDate != null) {
+        return _dateKeyUtc(earliestDate);
+      }
+    } catch (e) {
+      print('Error getting earliest chain join date: $e');
+    }
+    return null;
+  }
+
   /// Update user's global stats after a check-in
   /// Updates checkIns, currentStreak, longestStreak, and lastActiveDate
   Future<void> _updateUserStatsAfterCheckIn(String userId, String today) async {
     final userRef = _firestore.collection('users').doc(userId);
+    
+    // Backfill firstChainJoinDate if missing (for existing users)
+    // Do this BEFORE the transaction to avoid async calls inside transaction
+    bool didBackfill = false;
+    final userDoc = await userRef.get();
+    if (userDoc.exists) {
+      final userData = userDoc.data() ?? {};
+      final firstChainJoinDate = userData['firstChainJoinDate'] as String?;
+      
+      if (firstChainJoinDate == null || firstChainJoinDate.isEmpty) {
+        final earliestDate = await _getEarliestChainJoinDate(userId);
+        if (earliestDate != null) {
+          // Backfill the missing firstChainJoinDate
+          await userRef.set({'firstChainJoinDate': earliestDate}, SetOptions(merge: true));
+          didBackfill = true;
+        }
+      }
+    }
     
     await _firestore.runTransaction((tx) async {
       final userSnap = await tx.get(userRef);
@@ -560,6 +688,7 @@ class ChainService {
 
       final userData = userSnap.data() ?? {};
       final lastActiveDate = userData['lastActiveDate'] as String?;
+      final firstChainJoinDate = userData['firstChainJoinDate'] as String?;
       int currentStreak = (userData['currentStreak'] as int?) ?? 0;
       int longestStreak = (userData['longestStreak'] as int?) ?? 0;
       int checkIns = (userData['checkIns'] as int?) ?? 0;
@@ -599,13 +728,51 @@ class ChainService {
         checkIns++;
       }
 
+      // Calculate success rate
+      // Note: If firstChainJoinDate is null after backfill attempt above,
+      // success rate will be 0. It will be recalculated correctly on next check-in
+      // once firstChainJoinDate is properly set
+      final successRate = _calculateSuccessRate(
+        checkIns: checkIns,
+        firstChainJoinDate: firstChainJoinDate,
+        today: today,
+      );
+
       // Update user document
       tx.update(userRef, {
         'checkIns': checkIns,
         'currentStreak': currentStreak,
         'longestStreak': longestStreak,
         'lastActiveDate': today,
+        'successRate': successRate,
       });
     });
+    
+    // If we backfilled firstChainJoinDate, recalculate success rate one more time
+    // to ensure accuracy (the transaction might have read before backfill completed)
+    if (didBackfill) {
+      try {
+        final updatedUserDoc = await userRef.get();
+        if (updatedUserDoc.exists) {
+          final updatedData = updatedUserDoc.data() ?? {};
+          final backfilledDate = updatedData['firstChainJoinDate'] as String?;
+          final currentCheckIns = (updatedData['checkIns'] as int?) ?? 0;
+          
+          if (backfilledDate != null && currentCheckIns > 0) {
+            final recalculatedRate = _calculateSuccessRate(
+              checkIns: currentCheckIns,
+              firstChainJoinDate: backfilledDate,
+              today: today,
+            );
+            
+            // Update success rate with the recalculated value
+            await userRef.update({'successRate': recalculatedRate});
+          }
+        }
+      } catch (e) {
+        // Non-critical: if recalculation fails, success rate will update on next check-in
+        print('Error recalculating success rate after backfill: $e');
+      }
+    }
   }
 }
