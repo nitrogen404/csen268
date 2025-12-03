@@ -284,14 +284,29 @@ class ChainService {
 
       // all members checked in → success day
       if (checked == totalMembers) {
-        groupStreak++;
+        // Check if this day was already completed (prevents double-counting when new members join mid-day)
+        final alreadyCompletedToday = 
+            lastGroupCheckIn == today && lastCompleted == true;
+        
+        if (!alreadyCompletedToday) {
+          // First time completing today - increment progress and streak
+          groupStreak++;
 
-        tx.update(chainRef, {
-          'currentStreak': groupStreak,
-          'totalDaysCompleted': (chainData['totalDaysCompleted'] ?? 0) + 1,
-          'lastGroupCheckInDate': today,
-          'lastCompletionStatus': true,
-        });
+          tx.update(chainRef, {
+            'currentStreak': groupStreak,
+            'totalDaysCompleted': (chainData['totalDaysCompleted'] ?? 0) + 1,
+            'lastGroupCheckInDate': today,
+            'lastCompletionStatus': true,
+          });
+        } else {
+          // Day already completed - just ensure status is set (no progress/streeak increment)
+          // This handles the case where a new member joins mid-day and checks in
+          // We don't increment totalDaysCompleted or streak again for the same day
+          tx.update(chainRef, {
+            'lastGroupCheckInDate': today,
+            'lastCompletionStatus': true,
+          });
+        }
       } else {
         // still waiting for others
         tx.update(chainRef, {
