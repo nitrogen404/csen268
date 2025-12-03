@@ -89,6 +89,10 @@ service cloud.firestore {
           ||
           request.resource.data.memberCount > resource.data.memberCount
           ||
+          // Allow memberCount to decrease (when members leave)
+          (request.resource.data.memberCount < resource.data.memberCount
+           && exists(/databases/$(database)/documents/chains/$(chainId)/members/$(request.auth.uid)))
+          ||
           // Allow owner to update theme
           (get(/databases/$(database)/documents/chains/$(chainId)).data.ownerId == request.auth.uid
            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['theme']))
@@ -114,7 +118,10 @@ service cloud.firestore {
           );
 
         allow delete: if request.auth != null &&
-          get(/databases/$(database)/documents/chains/$(chainId)).data.ownerId == request.auth.uid;
+          (
+            memberId == request.auth.uid ||
+            get(/databases/$(database)/documents/chains/$(chainId)).data.ownerId == request.auth.uid
+          );
       }
 
       // UPDATED: allow chain owner to delete messages (for full chain deletion)

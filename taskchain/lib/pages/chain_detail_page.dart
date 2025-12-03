@@ -17,6 +17,7 @@ import '../services/message_service.dart';
 import '../services/auth_service.dart';
 import '../services/notification_badge_service.dart';
 import '../services/toast_notification_service.dart';
+import '../services/notification_service.dart';
 import '../services/chain_service.dart';
 import '../services/friend_service.dart';
 import '../services/user_service.dart';
@@ -53,6 +54,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   final MessageService _messageService = MessageService();
   final AuthService _authService = AuthService();
   final NotificationBadgeService _badgeService = NotificationBadgeService();
+  final NotificationService _notificationService = NotificationService();
   final ChainService _chainService = ChainService();
   final FriendService _friendService = FriendService();
   final UserService _userService = UserService();
@@ -926,6 +928,80 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     );
   }
 
+  Future<void> _confirmLeaveChain() async {
+    final user = _authService.currentUser;
+    if (user == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Leave Chain?'),
+          content: const Text(
+            'Are you sure you want to leave this chain? You will no longer receive notifications or be able to participate.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Leave'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      // Unsubscribe from FCM topic
+      final topic = 'chain_${widget.chainId}';
+      try {
+        await _notificationService.unsubscribeFromTopic(topic);
+      } catch (e) {
+        print('Warning: Failed to unsubscribe from topic: $e');
+        // Continue anyway - unsubscription failure shouldn't block leaving
+      }
+
+      // Leave the chain
+      await _chainService.leaveChain(
+        chainId: widget.chainId,
+        userId: user.uid,
+      );
+
+      if (!mounted) return;
+
+      // Close the members sheet first
+      Navigator.of(context).pop();
+
+      // Navigate back to home
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      navIndex.value = 0;
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You have left the chain.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      print('Error leaving chain: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to leave chain: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
   Future<void> _confirmDeleteChain() async {
     if (_isDeleting) return;
     final confirmed = await showDialog<bool>(
@@ -1507,6 +1583,26 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                 ],
               ),
               const SizedBox(height: 16),
+              
+              // Leave Chain button (only for non-owners)
+              if (!_isOwner)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  child: OutlinedButton.icon(
+                    onPressed: _confirmLeaveChain,
+                    icon: const Icon(Icons.exit_to_app, color: Colors.redAccent),
+                    label: const Text(
+                      'Leave Chain',
+                      style: TextStyle(color: Colors.redAccent),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.redAccent),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              
               SizedBox(
                 height: 260,
                 child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(

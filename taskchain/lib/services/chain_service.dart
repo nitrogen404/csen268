@@ -301,6 +301,14 @@ class ChainService {
       }
     });
 
+    // Update user's global stats after check-in
+    try {
+      await _updateUserStatsAfterCheckIn(userId, today);
+    } catch (e) {
+      // Don't fail check-in if stats update fails
+      print('Error updating user stats: $e');
+    }
+
     // Award coins for check-in
     try {
       await _currencyService.earnCoinsFromCheckIn(userId);
@@ -389,6 +397,61 @@ class ChainService {
     await chainRef.update({'theme': theme});
   }
 
+  /// Leave a chain
+  /// Members can leave chains, but owners must delete the chain instead
+  Future<void> leaveChain({
+    required String chainId,
+    required String userId,
+  }) async {
+    final chainRef = _firestore.collection('chains').doc(chainId);
+    final chainDoc = await chainRef.get();
+
+    if (!chainDoc.exists) {
+      throw 'Chain not found';
+    }
+
+    final data = chainDoc.data() as Map<String, dynamic>? ?? {};
+    final ownerId = data['ownerId'] as String? ?? '';
+
+    // Owners cannot leave - they must delete the chain
+    if (ownerId == userId) {
+      throw 'Chain owners cannot leave. Please delete the chain instead.';
+    }
+
+    final memberRef = chainRef.collection('members').doc(userId);
+    final memberDoc = await memberRef.get();
+
+    if (!memberDoc.exists) {
+      throw 'You are not a member of this chain.';
+    }
+
+    // Remove member and decrement count in a transaction
+    // We update the count first, then delete the member document
+    // to ensure security rules can validate the member exists
+    await _firestore.runTransaction((tx) async {
+      final memberSnap = await tx.get(memberRef);
+      if (!memberSnap.exists) {
+        throw 'Member document no longer exists';
+      }
+
+      final chainSnap = await tx.get(chainRef);
+      if (!chainSnap.exists) {
+        throw 'Chain no longer exists';
+      }
+
+      // Decrement member count first (while member still exists for security rules)
+      final currentCount = (chainSnap.data()?['memberCount'] as int?) ?? 1;
+      if (currentCount > 0) {
+        tx.update(chainRef, {
+          'memberCount': currentCount - 1,
+        });
+      }
+
+      // Then delete member document
+      tx.delete(memberRef);
+    });
+  }
+
   /// Delete an entire chain and its direct subcollections (members, messages).
   /// Only the owner is allowed to delete; if requesterId is not the owner,
   /// this will throw.
@@ -467,5 +530,67 @@ class ChainService {
     final m = dt.month.toString().padLeft(2, '0');
     final d = dt.day.toString().padLeft(2, '0');
     return '$y-$m-$d';
+  }
+
+  /// Update user's global stats after a check-in
+  /// Updates checkIns, currentStreak, longestStreak, and lastActiveDate
+  Future<void> _updateUserStatsAfterCheckIn(String userId, String today) async {
+    final userRef = _firestore.collection('users').doc(userId);
+    
+    await _firestore.runTransaction((tx) async {
+      final userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw 'User profile not found';
+      }
+
+      final userData = userSnap.data() ?? {};
+      final lastActiveDate = userData['lastActiveDate'] as String?;
+      int currentStreak = (userData['currentStreak'] as int?) ?? 0;
+      int longestStreak = (userData['longestStreak'] as int?) ?? 0;
+      int checkIns = (userData['checkIns'] as int?) ?? 0;
+
+      // Calculate yesterday's date
+      final todayDate = DateTime.utc(
+        int.parse(today.substring(0, 4)),
+        int.parse(today.substring(5, 7)),
+        int.parse(today.substring(8, 10)),
+      );
+      final yesterdayDate = todayDate.subtract(const Duration(days: 1));
+      final yesterday = _dateKeyUtc(yesterdayDate);
+
+      // Update streak based on last active date
+      if (lastActiveDate == null) {
+        // First check-in ever - streak starts at 1
+        currentStreak = 1;
+      } else if (lastActiveDate == today) {
+        // Already checked in today - don't change stats
+        // This shouldn't happen due to the check above, but handle gracefully
+        return; // Exit early - stats already updated
+      } else if (lastActiveDate == yesterday) {
+        // Consecutive day - increment streak
+        currentStreak++;
+      } else {
+        // Not consecutive (missed days) - reset streak to 1 for today
+        currentStreak = 1;
+      }
+
+      // Update longest streak if current streak exceeds it
+      if (currentStreak > longestStreak) {
+        longestStreak = currentStreak;
+      }
+
+      // Increment check-ins if this is the first check-in today
+      if (lastActiveDate != today) {
+        checkIns++;
+      }
+
+      // Update user document
+      tx.update(userRef, {
+        'checkIns': checkIns,
+        'currentStreak': currentStreak,
+        'longestStreak': longestStreak,
+        'lastActiveDate': today,
+      });
+    });
   }
 }
