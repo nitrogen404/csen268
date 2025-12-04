@@ -238,6 +238,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 ? _chainService.streamJoinedChains(currentUser.uid)
                 : const Stream.empty(),
             builder: (context, snapshot) {
+              final isWaiting = snapshot.connectionState == ConnectionState.waiting;
               final chains = snapshot.data ?? [];
               final hasChains = chains.isNotEmpty;
 
@@ -326,7 +327,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                             Text(
                               hasChains
                                   ? "Keep those chains alive!"
-                                  : "Create your first habit chain to get started.",
+                                  : isWaiting
+                                      ? "Loading your chains..."
+                                      : "Create your first habit chain to get started.",
                               style: text.bodyLarge?.copyWith(color: Colors.white70),
                             ),
                           ],
@@ -367,6 +370,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                             ),
                           ),
                         ],
+                      ),
+                    if (!hasChains && isWaiting)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(color: Colors.white),
+                          ),
+                        ),
                       ),
                   ],
                 ),
@@ -454,16 +468,24 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             child: StreamBuilder<List<Chain>>(
               stream: _chainService.streamJoinedChains(currentUser.uid),
               builder: (context, snapshot) {
+                final isWaiting = snapshot.connectionState == ConnectionState.waiting;
                 final chains = snapshot.data ?? [];
 
                 if (chains.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      'You haven\'t joined any chains yet.\nEnter a code above to join.',
-                      style: text.bodyMedium,
-                    ),
-                  );
+                  if (isWaiting) {
+                    return const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  } else {
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        'You haven\'t joined any chains yet.\nEnter a code above to join.',
+                        style: text.bodyMedium,
+                      ),
+                    );
+                  }
                 }
 
                 return Column(

@@ -43,13 +43,20 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: cs.surface,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        title: const Text("Edit Profile", style: TextStyle(color: Colors.black)),
+        backgroundColor: cs.surface,
+        foregroundColor: cs.onSurface,
+        title: Text(
+          "Edit Profile",
+          style: theme.textTheme.titleMedium
+              ?.copyWith(color: cs.onSurface, fontWeight: FontWeight.w600),
+        ),
       ),
       body: SafeArea(
         child: _loading
@@ -65,41 +72,19 @@ class _EditProfilePageState extends State<EditProfilePage> {
                       title: "Personal Information",
                       child: Column(
                         children: [
-                          _textField("Full Name", _nameController),
+                          _textField("Full Name", _nameController, cs),
                           const SizedBox(height: 12),
                           TextFormField(
                             controller: _emailController,
                             readOnly: true,
                             keyboardType: TextInputType.emailAddress,
-                            decoration: InputDecoration(
-                              labelText: "Email",
-                              labelStyle:
-                                  const TextStyle(color: Colors.grey),
-                              filled: true,
-                              fillColor: const Color(0xFFF7F5FB),
-                              contentPadding: const EdgeInsets.symmetric(
-                                  vertical: 14, horizontal: 14),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide:
-                                    BorderSide(color: Colors.grey.shade200),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide:
-                                    BorderSide(color: Colors.grey.shade200),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide:
-                                    const BorderSide(color: Color(0xFF9C27F0)),
-                              ),
-                            ),
+                            decoration: _inputDecoration(cs, "Email"),
                           ),
                           const SizedBox(height: 12),
                           _textField(
                             "Bio",
                             _bioController,
+                            cs,
                             maxLines: 3,
                             showCounter: true,
                             maxLength: 150,
@@ -111,74 +96,82 @@ class _EditProfilePageState extends State<EditProfilePage> {
                     _sectionCard(
                       title: "Location",
                       child:
-                          _textField("City, State/Country", _locationController),
+                          _textField("City, State/Country", _locationController, cs),
                     ),
                     const SizedBox(height: 16),
                     _sectionCard(
                       title: "Account Information",
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
+                        children: [
                           Text(
                             "Member Since",
-                            style:
-                                TextStyle(color: Colors.grey, fontSize: 14),
+                            style: TextStyle(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                              fontSize: 14,
+                            ),
                           ),
-                          SizedBox(height: 6),
+                          const SizedBox(height: 6),
                           Text(
                             "Account creation date cannot be changed",
                             style: TextStyle(
-                                color: Colors.black54, fontSize: 13),
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                              fontSize: 13,
+                            ),
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 40),
                     Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 14),
-                              side: BorderSide(color: Colors.grey.shade300),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                            ),
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text(
-                              "Cancel",
-                              style: TextStyle(color: Colors.black87),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                            ).copyWith(
-                              backgroundColor:
-                                  WidgetStateProperty.all(Colors.transparent),
-                            ),
-                            onPressed: _saveChanges,
+      children: [
+        Expanded(
+          child: OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              padding:
+                  const EdgeInsets.symmetric(vertical: 14),
+              side: BorderSide(color: cs.outlineVariant),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              "Cancel",
+              style: TextStyle(color: cs.onSurface),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              padding:
+                  const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              backgroundColor: Colors.transparent,
+              shadowColor: Colors.transparent,
+            ).copyWith(
+              backgroundColor:
+                  WidgetStateProperty.all(Colors.transparent),
+            ),
+            onPressed: _saveChanges,
                             child: Ink(
-                              decoration: const BoxDecoration(
+                              decoration: BoxDecoration(
                                 gradient: LinearGradient(
                                   colors: [
-                                    Color(0xFF9C27F0),
-                                    Color(0xFF7E4DF9)
+                                    cs.primary,
+                                    cs.primary.withOpacity(0.85),
                                   ],
                                   begin: Alignment.centerLeft,
                                   end: Alignment.centerRight,
                                 ),
                                 borderRadius:
-                                    BorderRadius.all(Radius.circular(12)),
+                                    const BorderRadius.all(Radius.circular(12)),
                               ),
                               child: Container(
                                 alignment: Alignment.center,
@@ -203,29 +196,36 @@ class _EditProfilePageState extends State<EditProfilePage> {
     );
   }
 
-  Widget _sectionCard({required String title, required Widget child}) {
+  Widget _sectionCard({
+    required String title,
+    required Widget child,
+  }) {
+    final cs = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cs.surface,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.05),
+            color: cs.shadow.withOpacity(0.05),
             blurRadius: 6,
             offset: const Offset(0, 3),
           ),
         ],
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: cs.outlineVariant),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                  fontSize: 15)),
+          Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: cs.onSurface,
+              fontSize: 15,
+            ),
+          ),
           const SizedBox(height: 12),
           child,
         ],
@@ -235,7 +235,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   Widget _textField(
     String label,
-    TextEditingController controller, {
+    TextEditingController controller,
+    ColorScheme cs, {
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
     bool showCounter = false,
@@ -246,26 +247,34 @@ class _EditProfilePageState extends State<EditProfilePage> {
       keyboardType: keyboardType,
       maxLines: maxLines,
       maxLength: maxLength,
-      decoration: InputDecoration(
-        labelText: label,
-        counterText: showCounter ? null : "",
-        labelStyle: const TextStyle(color: Colors.grey),
-        filled: true,
-        fillColor: const Color(0xFFF7F5FB),
-        contentPadding:
-            const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade200),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade200),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF9C27F0)),
-        ),
+      decoration: _inputDecoration(cs, label, showCounter: showCounter),
+    );
+  }
+
+  InputDecoration _inputDecoration(
+    ColorScheme cs,
+    String label, {
+    bool showCounter = true,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      counterText: showCounter ? null : "",
+      labelStyle: TextStyle(color: cs.onSurfaceVariant),
+      filled: true,
+      fillColor: cs.surfaceVariant,
+      contentPadding:
+          const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: cs.outlineVariant),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: cs.outlineVariant),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: cs.primary),
       ),
     );
   }
@@ -273,6 +282,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   Widget _buildProfilePictureSection() {
     final user = _authService.currentUser;
     if (user == null) return const SizedBox.shrink();
+    final cs = Theme.of(context).colorScheme;
 
     // Generate initials for fallback
     String initials = '?';
@@ -293,7 +303,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
             children: [
               CircleAvatar(
                 radius: 60,
-                backgroundColor: const Color(0xFFFFC72C),
+                backgroundColor: cs.secondaryContainer,
                 backgroundImage: _selectedImage != null
                     ? FileImage(_selectedImage!) as ImageProvider
                     : (_currentProfilePictureUrl != null && _currentProfilePictureUrl!.isNotEmpty
@@ -316,12 +326,12 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 right: 0,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: const Color(0xFF9C27F0),
+                    color: cs.primary,
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 3),
+                    border: Border.all(color: cs.surface, width: 3),
                   ),
                   child: PopupMenuButton<String>(
-                    icon: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+                    icon: Icon(Icons.camera_alt, color: cs.onPrimary, size: 20),
                     onSelected: (value) {
                       if (value == 'camera') {
                         _pickImage(fromCamera: true);
@@ -330,21 +340,23 @@ class _EditProfilePageState extends State<EditProfilePage> {
                       }
                     },
                     itemBuilder: (context) => [
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'camera',
                         child: Row(
                           children: [
-                            Icon(Icons.camera_alt, color: Colors.black87),
+                            Icon(Icons.camera_alt,
+                                color: cs.onSurfaceVariant),
                             SizedBox(width: 12),
                             Text('Take Photo'),
                           ],
                         ),
                       ),
-                      const PopupMenuItem(
+                      PopupMenuItem(
                         value: 'gallery',
                         child: Row(
                           children: [
-                            Icon(Icons.photo_library, color: Colors.black87),
+                            Icon(Icons.photo_library,
+                                color: cs.onSurfaceVariant),
                             SizedBox(width: 12),
                             Text('Choose from Gallery'),
                           ],
@@ -359,7 +371,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
           const SizedBox(height: 8),
           Text(
             'Tap camera icon to change photo',
-            style: TextStyle(color: Colors.grey[600], fontSize: 12),
+            style: TextStyle(
+              color: cs.onSurfaceVariant,
+              fontSize: 12,
+            ),
           ),
         ],
       ),

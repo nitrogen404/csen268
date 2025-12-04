@@ -975,11 +975,9 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
 
       if (!mounted) return;
 
-      // Close the members sheet first
-      Navigator.of(context).pop();
-
-      // Navigate back to home
-      Navigator.of(context).popUntil((route) => route.isFirst);
+      // Close any open modal (e.g., members sheet) and return home
+      Navigator.of(context, rootNavigator: true)
+          .popUntil((route) => route.isFirst);
       navIndex.value = 0;
 
       if (!mounted) return;

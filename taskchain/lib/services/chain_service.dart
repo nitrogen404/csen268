@@ -360,32 +360,7 @@ class ChainService {
       }
     }
 
-    // Check if chain is completed and award completion coins
-    try {
-      final chainDoc = await chainRef.get();
-      final chainData = chainDoc.data() ?? {};
-      final totalDaysCompleted = (chainData['totalDaysCompleted'] as int?) ?? 0;
-      final durationDays = (chainData['durationDays'] as int?) ?? 0;
-
-      if (durationDays > 0 && totalDaysCompleted >= durationDays) {
-        // Check if we've already awarded completion coins
-        final completionAwarded = chainData['completionCoinsAwarded'] as bool? ?? false;
-        if (!completionAwarded) {
-          // Award coins to all members
-          final allMembers = await chainRef.collection('members').get();
-          for (final memberDoc in allMembers.docs) {
-            final memberUserId = memberDoc.data()['userId'] as String? ?? memberDoc.id;
-            await _currencyService.earnCoinsFromChainCompletion(memberUserId);
-          }
-
-          // Mark as awarded
-          await chainRef.update({'completionCoinsAwarded': true});
-        }
-      }
-    } catch (e) {
-      // Don't fail check-in if completion coin check fails
-      print('Error checking chain completion: $e');
-    }
+    await _checkAndAwardCompletionCoins(chainRef);
   }
 
   /// Update chain theme
@@ -440,6 +415,20 @@ class ChainService {
       throw 'You are not a member of this chain.';
     }
 
+    // Snapshot current members (while this user still has permission) to determine
+    // whether removing this member completes today's check-ins.
+    final membersSnap = await chainRef.collection('members').get();
+    final todayKey = _dateKeyUtc(DateTime.now().toUtc());
+    final remainingMembers =
+        membersSnap.docs.where((doc) => doc.id != userId).toList();
+    final hasAnyRemainingCheckInToday = remainingMembers.any(
+      (m) => (m.data()['lastCheckInDate'] as String?) == todayKey,
+    );
+    final allRemainingCheckedToday = remainingMembers.isNotEmpty &&
+        remainingMembers.every(
+          (m) => (m.data()['lastCheckInDate'] as String?) == todayKey,
+        );
+
     // Remove member and decrement count in a transaction
     // We update the count first, then delete the member document
     // to ensure security rules can validate the member exists
@@ -464,7 +453,44 @@ class ChainService {
 
       // Then delete member document
       tx.delete(memberRef);
+
+      // If all remaining members already checked in today, mark the day complete
+      // while this user still has permission to write the chain document.
+      if (allRemainingCheckedToday && hasAnyRemainingCheckInToday) {
+        final chainData = chainSnap.data() ?? {};
+        final lastGroupCheckIn = chainData['lastGroupCheckInDate'] as String?;
+        final lastCompleted = chainData['lastCompletionStatus'] == true;
+
+        bool alreadyCompletedToday =
+            lastGroupCheckIn == todayKey && lastCompleted;
+
+        if (!alreadyCompletedToday) {
+          int groupStreak = chainData['currentStreak'] ?? 0;
+
+          if (lastGroupCheckIn != todayKey) {
+            if (lastGroupCheckIn != null && lastCompleted == false) {
+              groupStreak = 0;
+            }
+          }
+          groupStreak++;
+
+          tx.update(chainRef, {
+            'currentStreak': groupStreak,
+            'totalDaysCompleted':
+                (chainData['totalDaysCompleted'] ?? 0) + 1,
+            'lastGroupCheckInDate': todayKey,
+            'lastCompletionStatus': true,
+          });
+        }
+      }
     });
+
+    try {
+      await _checkAndAwardCompletionCoins(chainRef);
+    } catch (e) {
+      // Don't block leaving if completion coin check fails
+      print('Error checking completion coins after member leave: $e');
+    }
   }
 
   /// Delete an entire chain and its direct subcollections (members, messages).
@@ -545,6 +571,32 @@ class ChainService {
     final m = dt.month.toString().padLeft(2, '0');
     final d = dt.day.toString().padLeft(2, '0');
     return '$y-$m-$d';
+  }
+
+  Future<void> _checkAndAwardCompletionCoins(
+      DocumentReference<Map<String, dynamic>> chainRef) async {
+    try {
+      final chainDoc = await chainRef.get();
+      final chainData = chainDoc.data() ?? {};
+      final totalDaysCompleted = (chainData['totalDaysCompleted'] as int?) ?? 0;
+      final durationDays = (chainData['durationDays'] as int?) ?? 0;
+
+      if (durationDays > 0 && totalDaysCompleted >= durationDays) {
+        final completionAwarded =
+            chainData['completionCoinsAwarded'] as bool? ?? false;
+        if (!completionAwarded) {
+          final allMembers = await chainRef.collection('members').get();
+          for (final memberDoc in allMembers.docs) {
+            final memberUserId =
+                memberDoc.data()['userId'] as String? ?? memberDoc.id;
+            await _currencyService.earnCoinsFromChainCompletion(memberUserId);
+          }
+          await chainRef.update({'completionCoinsAwarded': true});
+        }
+      }
+    } catch (e) {
+      print('Error checking chain completion: $e');
+    }
   }
 
   /// Calculate success rate based on check-ins and days since first chain join
