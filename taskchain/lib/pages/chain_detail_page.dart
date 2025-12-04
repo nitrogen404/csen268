@@ -26,6 +26,7 @@ import '../models/message.dart';
 import 'chain_media_widgets.dart';
 import 'full_screen_image_page.dart';
 import 'shop_page.dart';
+import 'chain_info_page.dart';
 
 class ChainDetailPage extends StatefulWidget {
   final String chainId;
@@ -453,32 +454,6 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        title: const Text(''), // Remove title from AppBar
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.group_outlined),
-            onPressed: _showMembersSheet,
-            color: Colors.white, // Make icons white to match header
-          ),
-          if (_isOwner) ...[
-            IconButton(
-              icon: const Icon(Icons.palette_outlined),
-              onPressed: _showThemeSelector,
-              color: Colors.white,
-              tooltip: 'Change Theme',
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-              onPressed: _confirmDeleteChain,
-            ),
-          ],
-        ],
-        backgroundColor: Colors.transparent,
-        foregroundColor: Colors.white, // Make back button white
-        elevation: 0,
-      ),
-      extendBodyBehindAppBar: true,
       body: Container(
         decoration: BoxDecoration(
           image: DecorationImage(
@@ -488,7 +463,6 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
         ),
         child: Column(
           children: [
-            // Removed SizedBox, padding handled inside _buildHeader
             _buildHeader(),
             _buildCompleteButton(),
             _buildChatHeader(),
@@ -525,50 +499,107 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   Widget _buildHeader() {
     return Container(
       padding: EdgeInsets.fromLTRB(
-        20,
-        MediaQuery.of(context).padding.top + kToolbarHeight + 10, // Add top padding for status bar + app bar
-        20,
-        20,
+        0,
+        MediaQuery.of(context).padding.top,
+        0,
+        12,
       ),
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [Color(0xFF7B61FF), Color(0xFFFF6EC7)],
         ),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(24)),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Chain Title
-          Text(
-            widget.chainTitle,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+          // AppBar-like header
+          SizedBox(
+            height: 56,
+            child: Row(
+              children: [
+                // Back button
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+                // Chain Title (centered and tappable)
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ChainInfoPage(
+                            chainId: widget.chainId,
+                            chainTitle: widget.chainTitle,
+                            members: widget.members,
+                            progress: widget.progress,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      widget.chainTitle,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                // Members button
+                IconButton(
+                  icon: const Icon(Icons.group_outlined, color: Colors.white),
+                  onPressed: _showMembersSheet,
+                ),
+                // Theme selector (owner only)
+                if (_isOwner)
+                  IconButton(
+                    icon: const Icon(Icons.palette_outlined, color: Colors.white),
+                    onPressed: _showThemeSelector,
+                    tooltip: 'Change Theme',
+                  ),
+                // Delete button (owner only)
+                if (_isOwner)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                    onPressed: _confirmDeleteChain,
+                  ),
+              ],
             ),
           ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(child: _buildProgressSection()),
-            ],
-          ),
-          const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: TweenAnimationBuilder<double>(
-              duration: const Duration(milliseconds: 700),
-              tween: Tween<double>(begin: 0, end: widget.progress),
-              builder: (context, value, _) {
-                return LinearProgressIndicator(
-                  value: value.clamp(0.0, 1.0),
-                  backgroundColor: Colors.white.withOpacity(0.25),
-                  valueColor:
-                      const AlwaysStoppedAnimation<Color>(Colors.white),
-                  minHeight: 10,
-                );
-              },
+          // Progress bar below title
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${(widget.progress * 100).toInt()}% Complete',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: TweenAnimationBuilder<double>(
+                    duration: const Duration(milliseconds: 700),
+                    tween: Tween<double>(begin: 0, end: widget.progress),
+                    builder: (context, value, _) {
+                      return LinearProgressIndicator(
+                        value: value.clamp(0.0, 1.0),
+                        backgroundColor: Colors.white.withOpacity(0.25),
+                        valueColor:
+                            const AlwaysStoppedAnimation<Color>(Colors.white),
+                        minHeight: 6,
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -972,32 +1003,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   }
 
   Widget _buildChatHeader() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          _HeaderChip(
-            icon: Icons.photo_library_outlined,
-            label: 'Media',
-            onTap: _showMediaSheet,
-          ),
-          const SizedBox(width: 8),
-          _HeaderChip(
-            icon: Icons.check_circle_outline,
-            label: 'Check-ins',
-            onTap: _showCheckInsSheet,
-          ),
-          if (_isDeleting) ...[
-            const SizedBox(width: 8),
-            const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ],
-        ],
-      ),
-    );
+    return const SizedBox.shrink(); // Removed Media and Check-ins buttons - now in Group Info page
   }
 
   Widget _buildMessageList() {
