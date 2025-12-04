@@ -154,6 +154,7 @@ class _ShopPageState extends State<ShopPage> with SingleTickerProviderStateMixin
     return RefreshIndicator(
       onRefresh: _refreshData,
       child: GridView.builder(
+        physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.all(16),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
@@ -195,6 +196,7 @@ class _ShopPageState extends State<ShopPage> with SingleTickerProviderStateMixin
     return RefreshIndicator(
       onRefresh: _refreshData,
       child: ListView(
+        physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
           if (_isPremium) ...[
@@ -327,6 +329,7 @@ class _ShopPageState extends State<ShopPage> with SingleTickerProviderStateMixin
     return RefreshIndicator(
       onRefresh: _refreshData,
       child: ListView(
+        physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
           Text(

@@ -230,6 +230,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
     final currentUser = _authService.currentUser;
 
     return CustomScrollView(
+      physics: const BouncingScrollPhysics(),
       slivers: [
         // Header Section (dynamic: depends on chain count and stats)
         SliverToBoxAdapter(

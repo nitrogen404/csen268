@@ -269,6 +269,7 @@ class _ChatbotPageState extends State<ChatbotPage> {
           // Messages list
           Expanded(
             child: ListView.builder(
+              physics: const BouncingScrollPhysics(),
               controller: _scrollController,
               padding: const EdgeInsets.all(16),
               itemCount: _messages.length + (_isLoading ? 1 : 0),

@@ -1102,6 +1102,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
           if (messages.isEmpty) return _buildEmptyChat();
 
           return ListView.builder(
+            physics: const BouncingScrollPhysics(),
             controller: _scrollController,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: messages.length,
