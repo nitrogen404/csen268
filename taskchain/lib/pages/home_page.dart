@@ -15,6 +15,7 @@ import '../models/profile.dart';
 import 'settings_page.dart';
 import 'chain_detail_page.dart';
 import 'shop_page.dart';
+import 'chatbot_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -237,6 +238,7 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                 ? _chainService.streamJoinedChains(currentUser.uid)
                 : const Stream.empty(),
             builder: (context, snapshot) {
+              final isWaiting = snapshot.connectionState == ConnectionState.waiting;
               final chains = snapshot.data ?? [];
               final hasChains = chains.isNotEmpty;
 
@@ -325,7 +327,9 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                             Text(
                               hasChains
                                   ? "Keep those chains alive!"
-                                  : "Create your first habit chain to get started.",
+                                  : isWaiting
+                                      ? "Loading your chains..."
+                                      : "Create your first habit chain to get started.",
                               style: text.bodyLarge?.copyWith(color: Colors.white70),
                             ),
                           ],
@@ -366,6 +370,17 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
                             ),
                           ),
                         ],
+                      ),
+                    if (!hasChains && isWaiting)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(color: Colors.white),
+                          ),
+                        ),
                       ),
                   ],
                 ),
@@ -453,16 +468,24 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             child: StreamBuilder<List<Chain>>(
               stream: _chainService.streamJoinedChains(currentUser.uid),
               builder: (context, snapshot) {
+                final isWaiting = snapshot.connectionState == ConnectionState.waiting;
                 final chains = snapshot.data ?? [];
 
                 if (chains.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text(
-                      'You haven\'t joined any chains yet.\nEnter a code above to join.',
-                      style: text.bodyMedium,
-                    ),
-                  );
+                  if (isWaiting) {
+                    return const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  } else {
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        'You haven\'t joined any chains yet.\nEnter a code above to join.',
+                        style: text.bodyMedium,
+                      ),
+                    );
+                  }
                 }
 
                 return Column(
@@ -515,54 +538,43 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
             ),
           ),
 
-        // Achievements — only show if user has chains
+        // Shop and AI Coach Section
         SliverToBoxAdapter(
-          child: StreamBuilder<List<Chain>>(
-            stream: currentUser != null
-                ? _chainService.streamJoinedChains(currentUser.uid)
-                : const Stream.empty(),
-            builder: (context, snapshot) {
-              final hasChains = (snapshot.data ?? []).isNotEmpty;
-              if (!hasChains) return const SizedBox.shrink();
-
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                    child: Text(
-                      "Recent Achievements",
-                      style: text.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                    ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _QuickAccessCard(
+                    title: 'Shop',
+                    subtitle: 'Themes & Premium',
+                    icon: Icons.shopping_bag,
+                    color: Colors.purple,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ShopPage()),
+                      );
+                    },
                   ),
-                  SizedBox(
-                    height: 140,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      children: const [
-                        _Achieve(
-                          icon: Icons.emoji_events,
-                          title: "Streak x10",
-                          subtitle: "Nice consistency!",
-                        ),
-                        _Achieve(
-                          icon: Icons.business_rounded,
-                          title: "Goal Hit",
-                          subtitle: "3 goals this week",
-                        ),
-                        _Achieve(
-                          icon: Icons.shield_moon,
-                          title: "Night Owl",
-                          subtitle: "Tasks after 10pm",
-                        ),
-                      ],
-                    ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _QuickAccessCard(
+                    title: 'AI Coach',
+                    subtitle: 'Get personalized help',
+                    icon: Icons.smart_toy,
+                    color: Colors.blue,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ChatbotPage()),
+                      );
+                    },
                   ),
-                  const SizedBox(height: 24),
-                ],
-              );
-            },
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -570,43 +582,65 @@ class _HomePageState extends State<HomePage> with SingleTickerProviderStateMixin
   }
 }
 
-class _Achieve extends StatelessWidget {
-  final IconData icon;
+class _QuickAccessCard extends StatelessWidget {
   final String title;
   final String subtitle;
-  const _Achieve({
-    required this.icon,
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _QuickAccessCard({
     required this.title,
     required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Container(
-      width: 220,
-      margin: const EdgeInsets.only(right: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: cs.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon),
-          const Spacer(),
-          Text(
-            title,
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 6),
-          Text(subtitle),
-        ],
+    final text = Theme.of(context).textTheme;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: cs.outlineVariant),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: (text.titleMedium ?? const TextStyle(fontSize: 16)).copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: (text.bodySmall ?? const TextStyle(fontSize: 12)).copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
       ),
     );
   }

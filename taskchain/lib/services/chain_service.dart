@@ -284,14 +284,29 @@ class ChainService {
 
       // all members checked in → success day
       if (checked == totalMembers) {
-        groupStreak++;
+        // Check if this day was already completed (prevents double-counting when new members join mid-day)
+        final alreadyCompletedToday = 
+            lastGroupCheckIn == today && lastCompleted == true;
+        
+        if (!alreadyCompletedToday) {
+          // First time completing today - increment progress and streak
+          groupStreak++;
 
-        tx.update(chainRef, {
-          'currentStreak': groupStreak,
-          'totalDaysCompleted': (chainData['totalDaysCompleted'] ?? 0) + 1,
-          'lastGroupCheckInDate': today,
-          'lastCompletionStatus': true,
-        });
+          tx.update(chainRef, {
+            'currentStreak': groupStreak,
+            'totalDaysCompleted': (chainData['totalDaysCompleted'] ?? 0) + 1,
+            'lastGroupCheckInDate': today,
+            'lastCompletionStatus': true,
+          });
+        } else {
+          // Day already completed - just ensure status is set (no progress/streeak increment)
+          // This handles the case where a new member joins mid-day and checks in
+          // We don't increment totalDaysCompleted or streak again for the same day
+          tx.update(chainRef, {
+            'lastGroupCheckInDate': today,
+            'lastCompletionStatus': true,
+          });
+        }
       } else {
         // still waiting for others
         tx.update(chainRef, {
@@ -300,6 +315,14 @@ class ChainService {
         });
       }
     });
+
+    // Update user's global stats after check-in
+    try {
+      await _updateUserStatsAfterCheckIn(userId, today);
+    } catch (e) {
+      // Don't fail check-in if stats update fails
+      print('Error updating user stats: $e');
+    }
 
     // Award coins for check-in
     try {
@@ -337,32 +360,7 @@ class ChainService {
       }
     }
 
-    // Check if chain is completed and award completion coins
-    try {
-      final chainDoc = await chainRef.get();
-      final chainData = chainDoc.data() ?? {};
-      final totalDaysCompleted = (chainData['totalDaysCompleted'] as int?) ?? 0;
-      final durationDays = (chainData['durationDays'] as int?) ?? 0;
-
-      if (durationDays > 0 && totalDaysCompleted >= durationDays) {
-        // Check if we've already awarded completion coins
-        final completionAwarded = chainData['completionCoinsAwarded'] as bool? ?? false;
-        if (!completionAwarded) {
-          // Award coins to all members
-          final allMembers = await chainRef.collection('members').get();
-          for (final memberDoc in allMembers.docs) {
-            final memberUserId = memberDoc.data()['userId'] as String? ?? memberDoc.id;
-            await _currencyService.earnCoinsFromChainCompletion(memberUserId);
-          }
-
-          // Mark as awarded
-          await chainRef.update({'completionCoinsAwarded': true});
-        }
-      }
-    } catch (e) {
-      // Don't fail check-in if completion coin check fails
-      print('Error checking chain completion: $e');
-    }
+    await _checkAndAwardCompletionCoins(chainRef);
   }
 
   /// Update chain theme
@@ -387,6 +385,112 @@ class ChainService {
     }
 
     await chainRef.update({'theme': theme});
+  }
+
+  /// Leave a chain
+  /// Members can leave chains, but owners must delete the chain instead
+  Future<void> leaveChain({
+    required String chainId,
+    required String userId,
+  }) async {
+    final chainRef = _firestore.collection('chains').doc(chainId);
+    final chainDoc = await chainRef.get();
+
+    if (!chainDoc.exists) {
+      throw 'Chain not found';
+    }
+
+    final data = chainDoc.data() as Map<String, dynamic>? ?? {};
+    final ownerId = data['ownerId'] as String? ?? '';
+
+    // Owners cannot leave - they must delete the chain
+    if (ownerId == userId) {
+      throw 'Chain owners cannot leave. Please delete the chain instead.';
+    }
+
+    final memberRef = chainRef.collection('members').doc(userId);
+    final memberDoc = await memberRef.get();
+
+    if (!memberDoc.exists) {
+      throw 'You are not a member of this chain.';
+    }
+
+    // Snapshot current members (while this user still has permission) to determine
+    // whether removing this member completes today's check-ins.
+    final membersSnap = await chainRef.collection('members').get();
+    final todayKey = _dateKeyUtc(DateTime.now().toUtc());
+    final remainingMembers =
+        membersSnap.docs.where((doc) => doc.id != userId).toList();
+    final hasAnyRemainingCheckInToday = remainingMembers.any(
+      (m) => (m.data()['lastCheckInDate'] as String?) == todayKey,
+    );
+    final allRemainingCheckedToday = remainingMembers.isNotEmpty &&
+        remainingMembers.every(
+          (m) => (m.data()['lastCheckInDate'] as String?) == todayKey,
+        );
+
+    // Remove member and decrement count in a transaction
+    // We update the count first, then delete the member document
+    // to ensure security rules can validate the member exists
+    await _firestore.runTransaction((tx) async {
+      final memberSnap = await tx.get(memberRef);
+      if (!memberSnap.exists) {
+        throw 'Member document no longer exists';
+      }
+
+      final chainSnap = await tx.get(chainRef);
+      if (!chainSnap.exists) {
+        throw 'Chain no longer exists';
+      }
+
+      // Decrement member count first (while member still exists for security rules)
+      final currentCount = (chainSnap.data()?['memberCount'] as int?) ?? 1;
+      if (currentCount > 0) {
+        tx.update(chainRef, {
+          'memberCount': currentCount - 1,
+        });
+      }
+
+      // Then delete member document
+      tx.delete(memberRef);
+
+      // If all remaining members already checked in today, mark the day complete
+      // while this user still has permission to write the chain document.
+      if (allRemainingCheckedToday && hasAnyRemainingCheckInToday) {
+        final chainData = chainSnap.data() ?? {};
+        final lastGroupCheckIn = chainData['lastGroupCheckInDate'] as String?;
+        final lastCompleted = chainData['lastCompletionStatus'] == true;
+
+        bool alreadyCompletedToday =
+            lastGroupCheckIn == todayKey && lastCompleted;
+
+        if (!alreadyCompletedToday) {
+          int groupStreak = chainData['currentStreak'] ?? 0;
+
+          if (lastGroupCheckIn != todayKey) {
+            if (lastGroupCheckIn != null && lastCompleted == false) {
+              groupStreak = 0;
+            }
+          }
+          groupStreak++;
+
+          tx.update(chainRef, {
+            'currentStreak': groupStreak,
+            'totalDaysCompleted':
+                (chainData['totalDaysCompleted'] ?? 0) + 1,
+            'lastGroupCheckInDate': todayKey,
+            'lastCompletionStatus': true,
+          });
+        }
+      }
+    });
+
+    try {
+      await _checkAndAwardCompletionCoins(chainRef);
+    } catch (e) {
+      // Don't block leaving if completion coin check fails
+      print('Error checking completion coins after member leave: $e');
+    }
   }
 
   /// Delete an entire chain and its direct subcollections (members, messages).
@@ -467,5 +571,260 @@ class ChainService {
     final m = dt.month.toString().padLeft(2, '0');
     final d = dt.day.toString().padLeft(2, '0');
     return '$y-$m-$d';
+  }
+
+  Future<void> _checkAndAwardCompletionCoins(
+      DocumentReference<Map<String, dynamic>> chainRef) async {
+    try {
+      final chainDoc = await chainRef.get();
+      final chainData = chainDoc.data() ?? {};
+      final totalDaysCompleted = (chainData['totalDaysCompleted'] as int?) ?? 0;
+      final durationDays = (chainData['durationDays'] as int?) ?? 0;
+
+      if (durationDays > 0 && totalDaysCompleted >= durationDays) {
+        final completionAwarded =
+            chainData['completionCoinsAwarded'] as bool? ?? false;
+        if (!completionAwarded) {
+          final allMembers = await chainRef.collection('members').get();
+          for (final memberDoc in allMembers.docs) {
+            final memberUserId =
+                memberDoc.data()['userId'] as String? ?? memberDoc.id;
+            await _currencyService.earnCoinsFromChainCompletion(memberUserId);
+          }
+          await chainRef.update({'completionCoinsAwarded': true});
+        }
+      }
+    } catch (e) {
+      print('Error checking chain completion: $e');
+    }
+  }
+
+  /// Calculate success rate based on check-ins and days since first chain join
+  /// Returns a percentage (0.0 - 100.0)
+  double _calculateSuccessRate({
+    required int checkIns,
+    required String? firstChainJoinDate,
+    required String today,
+  }) {
+    // If user hasn't joined any chains yet, success rate is 0
+    if (firstChainJoinDate == null || firstChainJoinDate.isEmpty) {
+      return 0.0;
+    }
+
+    // Parse the first chain join date
+    DateTime firstDate;
+    try {
+      firstDate = DateTime.utc(
+        int.parse(firstChainJoinDate.substring(0, 4)),
+        int.parse(firstChainJoinDate.substring(5, 7)),
+        int.parse(firstChainJoinDate.substring(8, 10)),
+      );
+    } catch (e) {
+      // Invalid date format, return 0
+      return 0.0;
+    }
+
+    // Parse today's date
+    DateTime todayDate;
+    try {
+      todayDate = DateTime.utc(
+        int.parse(today.substring(0, 4)),
+        int.parse(today.substring(5, 7)),
+        int.parse(today.substring(8, 10)),
+      );
+    } catch (e) {
+      // Invalid date format, return 0
+      return 0.0;
+    }
+
+    // Calculate total days from first chain join to today (inclusive)
+    // Add 1 to include both start and end days
+    final totalDays = todayDate.difference(firstDate).inDays + 1;
+
+    // If total days is 0 or negative, return 0
+    if (totalDays <= 0) {
+      return 0.0;
+    }
+
+    // Calculate success rate: (checkIns / totalDays) * 100
+    final successRate = (checkIns / totalDays) * 100.0;
+
+    // Clamp to 0-100 range
+    return successRate.clamp(0.0, 100.0);
+  }
+
+  /// Get the earliest chain join date for a user (for backfilling firstChainJoinDate)
+  Future<String?> _getEarliestChainJoinDate(String userId) async {
+    try {
+      final memberDocs = await _firestore
+          .collectionGroup('members')
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      if (memberDocs.docs.isEmpty) {
+        return null;
+      }
+
+      DateTime? earliestDate;
+
+      for (final memberDoc in memberDocs.docs) {
+        final chainRef = memberDoc.reference.parent.parent;
+        if (chainRef == null) continue;
+
+        final chainSnap = await chainRef.get();
+        if (!chainSnap.exists) continue;
+
+        final chainData = chainSnap.data() as Map<String, dynamic>? ?? {};
+        final startDate = chainData['startDate'] as Timestamp?;
+        
+        if (startDate != null) {
+          final chainStart = startDate.toDate().toUtc();
+          final chainStartKey = _dateKeyUtc(chainStart);
+          
+          if (earliestDate == null) {
+            earliestDate = DateTime.utc(
+              int.parse(chainStartKey.substring(0, 4)),
+              int.parse(chainStartKey.substring(5, 7)),
+              int.parse(chainStartKey.substring(8, 10)),
+            );
+          } else {
+            final current = DateTime.utc(
+              int.parse(chainStartKey.substring(0, 4)),
+              int.parse(chainStartKey.substring(5, 7)),
+              int.parse(chainStartKey.substring(8, 10)),
+            );
+            if (current.isBefore(earliestDate)) {
+              earliestDate = current;
+            }
+          }
+        }
+      }
+
+      if (earliestDate != null) {
+        return _dateKeyUtc(earliestDate);
+      }
+    } catch (e) {
+      print('Error getting earliest chain join date: $e');
+    }
+    return null;
+  }
+
+  /// Update user's global stats after a check-in
+  /// Updates checkIns, currentStreak, longestStreak, and lastActiveDate
+  Future<void> _updateUserStatsAfterCheckIn(String userId, String today) async {
+    final userRef = _firestore.collection('users').doc(userId);
+    
+    // Backfill firstChainJoinDate if missing (for existing users)
+    // Do this BEFORE the transaction to avoid async calls inside transaction
+    bool didBackfill = false;
+    final userDoc = await userRef.get();
+    if (userDoc.exists) {
+      final userData = userDoc.data() ?? {};
+      final firstChainJoinDate = userData['firstChainJoinDate'] as String?;
+      
+      if (firstChainJoinDate == null || firstChainJoinDate.isEmpty) {
+        final earliestDate = await _getEarliestChainJoinDate(userId);
+        if (earliestDate != null) {
+          // Backfill the missing firstChainJoinDate
+          await userRef.set({'firstChainJoinDate': earliestDate}, SetOptions(merge: true));
+          didBackfill = true;
+        }
+      }
+    }
+    
+    await _firestore.runTransaction((tx) async {
+      final userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw 'User profile not found';
+      }
+
+      final userData = userSnap.data() ?? {};
+      final lastActiveDate = userData['lastActiveDate'] as String?;
+      final firstChainJoinDate = userData['firstChainJoinDate'] as String?;
+      int currentStreak = (userData['currentStreak'] as int?) ?? 0;
+      int longestStreak = (userData['longestStreak'] as int?) ?? 0;
+      int checkIns = (userData['checkIns'] as int?) ?? 0;
+
+      // Calculate yesterday's date
+      final todayDate = DateTime.utc(
+        int.parse(today.substring(0, 4)),
+        int.parse(today.substring(5, 7)),
+        int.parse(today.substring(8, 10)),
+      );
+      final yesterdayDate = todayDate.subtract(const Duration(days: 1));
+      final yesterday = _dateKeyUtc(yesterdayDate);
+
+      // Update streak based on last active date
+      if (lastActiveDate == null) {
+        // First check-in ever - streak starts at 1
+        currentStreak = 1;
+      } else if (lastActiveDate == today) {
+        // Already checked in today - don't change stats
+        // This shouldn't happen due to the check above, but handle gracefully
+        return; // Exit early - stats already updated
+      } else if (lastActiveDate == yesterday) {
+        // Consecutive day - increment streak
+        currentStreak++;
+      } else {
+        // Not consecutive (missed days) - reset streak to 1 for today
+        currentStreak = 1;
+      }
+
+      // Update longest streak if current streak exceeds it
+      if (currentStreak > longestStreak) {
+        longestStreak = currentStreak;
+      }
+
+      // Increment check-ins if this is the first check-in today
+      if (lastActiveDate != today) {
+        checkIns++;
+      }
+
+      // Calculate success rate
+      // Note: If firstChainJoinDate is null after backfill attempt above,
+      // success rate will be 0. It will be recalculated correctly on next check-in
+      // once firstChainJoinDate is properly set
+      final successRate = _calculateSuccessRate(
+        checkIns: checkIns,
+        firstChainJoinDate: firstChainJoinDate,
+        today: today,
+      );
+
+      // Update user document
+      tx.update(userRef, {
+        'checkIns': checkIns,
+        'currentStreak': currentStreak,
+        'longestStreak': longestStreak,
+        'lastActiveDate': today,
+        'successRate': successRate,
+      });
+    });
+    
+    // If we backfilled firstChainJoinDate, recalculate success rate one more time
+    // to ensure accuracy (the transaction might have read before backfill completed)
+    if (didBackfill) {
+      try {
+        final updatedUserDoc = await userRef.get();
+        if (updatedUserDoc.exists) {
+          final updatedData = updatedUserDoc.data() ?? {};
+          final backfilledDate = updatedData['firstChainJoinDate'] as String?;
+          final currentCheckIns = (updatedData['checkIns'] as int?) ?? 0;
+          
+          if (backfilledDate != null && currentCheckIns > 0) {
+            final recalculatedRate = _calculateSuccessRate(
+              checkIns: currentCheckIns,
+              firstChainJoinDate: backfilledDate,
+              today: today,
+            );
+            
+            // Update success rate with the recalculated value
+            await userRef.update({'successRate': recalculatedRate});
+          }
+        }
+      } catch (e) {
+        // Non-critical: if recalculation fails, success rate will update on next check-in
+        print('Error recalculating success rate after backfill: $e');
+      }
+    }
   }
 }

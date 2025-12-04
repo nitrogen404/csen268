@@ -27,7 +27,7 @@ class _ShopPageState extends State<ShopPage> with SingleTickerProviderStateMixin
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _loadUserData();
   }
 
@@ -89,6 +89,7 @@ class _ShopPageState extends State<ShopPage> with SingleTickerProviderStateMixin
           tabs: const [
             Tab(text: 'Themes', icon: Icon(Icons.palette)),
             Tab(text: 'Premium', icon: Icon(Icons.stars)),
+            Tab(text: 'Coins', icon: Icon(Icons.monetization_on)),
           ],
         ),
       ),
@@ -128,6 +129,7 @@ class _ShopPageState extends State<ShopPage> with SingleTickerProviderStateMixin
                     children: [
                       _buildThemesTab(),
                       _buildPremiumTab(),
+                      _buildCoinsTab(),
                     ],
                   ),
                 ),
@@ -318,6 +320,58 @@ class _ShopPageState extends State<ShopPage> with SingleTickerProviderStateMixin
     }
   }
 
+  Widget _buildCoinsTab() {
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return RefreshIndicator(
+      onRefresh: _refreshData,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(
+            'Buy Coins',
+            style: (text.titleLarge ?? const TextStyle(fontSize: 20)).copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Purchase coins to unlock themes and premium features',
+            style: (text.bodyMedium ?? const TextStyle(fontSize: 14)).copyWith(
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Column(
+            children: [
+              _CoinPackCard(
+                coins: 100,
+                priceLabel: '\$0.99',
+                description: 'Starter pack',
+                onTap: () => _purchaseCoinPack(100, '\$0.99'),
+              ),
+              const SizedBox(height: 16),
+              _CoinPackCard(
+                coins: 600,
+                priceLabel: '\$4.99',
+                description: 'Value pack',
+                onTap: () => _purchaseCoinPack(600, '\$4.99'),
+              ),
+              const SizedBox(height: 16),
+              _CoinPackCard(
+                coins: 1300,
+                priceLabel: '\$9.99',
+                description: 'Mega pack',
+                onTap: () => _purchaseCoinPack(1300, '\$9.99'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _purchasePremium(String type, int cost) async {
     final user = _authService.currentUser;
     if (user == null) return;
@@ -370,6 +424,52 @@ class _ShopPageState extends State<ShopPage> with SingleTickerProviderStateMixin
         );
       }
     }
+  }
+
+  Future<void> _purchaseCoinPack(int coins, String priceLabel) async {
+    final user = _authService.currentUser;
+    if (user == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Buy $coins coins?'),
+        content: Text('Purchase $coins coins for $priceLabel? (temporary simulated purchase)'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Buy'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _currency_service_addCoins_safe(user.uid, coins);
+      await _refreshData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Added $coins coins to your account')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to add coins: $e')),
+        );
+      }
+    }
+  }
+
+  // helper to call CurrencyService.addCoins and avoid naming confusion
+  Future<void> _currency_service_addCoins_safe(String userId, int amount) async {
+    await _currencyService.addCoins(userId, amount, 'Purchased coins');
   }
 }
 
@@ -561,6 +661,84 @@ class _PremiumCard extends StatelessWidget {
               const Icon(Icons.check_circle, color: Colors.green, size: 32)
             else if (!canAfford)
               const Icon(Icons.lock, color: Colors.grey, size: 32),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CoinPackCard extends StatelessWidget {
+  final int coins;
+  final String priceLabel;
+  final String description;
+  final VoidCallback? onTap;
+
+  const _CoinPackCard({
+    required this.coins,
+    required this.priceLabel,
+    required this.description,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: cs.surfaceVariant.withOpacity(0.3),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: cs.outline.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: cs.primary.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(Icons.monetization_on, color: cs.primary, size: 32),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$coins Coins',
+                    style: (text.titleLarge ?? const TextStyle(fontSize: 20)).copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: text.bodyMedium ?? const TextStyle(fontSize: 14),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    priceLabel,
+                    style: (text.titleMedium ?? const TextStyle(fontSize: 18)).copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: cs.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            FilledButton(
+              onPressed: onTap,
+              child: const Text('Buy'),
+            ),
           ],
         ),
       ),
