@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/chain.dart';
@@ -120,26 +121,69 @@ class ChainService {
   }
 
   Stream<List<Chain>> streamJoinedChains(String userId) {
-    return _firestore
+    // Listen to member docs to discover chains, then live-listen to each chain
+    // so progress/streak updates flow to Home without manual refresh.
+    final controller = StreamController<List<Chain>>();
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? memberSub;
+    final chainSubs =
+        <String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>{};
+    final chainCache = <String, Chain>{};
+
+    void emitChains() {
+      final list = chainCache.values.toList()
+        ..sort((a, b) => a.title.compareTo(b.title));
+      controller.add(list);
+    }
+
+    memberSub = _firestore
         .collectionGroup('members')
         .where('userId', isEqualTo: userId)
         .snapshots()
-        .asyncMap((snapshot) async {
-      final chains = <Chain>[];
+        .listen((snapshot) {
+      final currentChainIds = <String>{};
 
       for (final memberDoc in snapshot.docs) {
         final chainRef = memberDoc.reference.parent.parent;
         if (chainRef == null) continue;
 
-        final chainSnap = await chainRef.get();
-        if (chainSnap.exists) {
-          chains.add(Chain.fromFirestore(chainSnap));
-        }
+        final chainId = chainRef.id;
+        currentChainIds.add(chainId);
+
+        // Start listening to chain changes when first discovered.
+        chainSubs.putIfAbsent(chainId, () {
+          return chainRef.snapshots().listen((chainSnap) {
+            if (chainSnap.exists) {
+              chainCache[chainId] = Chain.fromFirestore(chainSnap);
+            } else {
+              chainCache.remove(chainId);
+            }
+            emitChains();
+          }, onError: controller.addError);
+        });
       }
 
-      chains.sort((a, b) => a.title.compareTo(b.title));
-      return chains;
-    });
+      // Stop listening for chains the user is no longer in.
+      final toRemove =
+          chainSubs.keys.where((id) => !currentChainIds.contains(id)).toList();
+      for (final id in toRemove) {
+        chainSubs[id]?.cancel();
+        chainSubs.remove(id);
+        chainCache.remove(id);
+      }
+
+      emitChains();
+    }, onError: controller.addError);
+
+    controller.onCancel = () async {
+      await memberSub?.cancel();
+      for (final sub in chainSubs.values) {
+        await sub.cancel();
+      }
+      chainSubs.clear();
+      chainCache.clear();
+    };
+
+    return controller.stream;
   }
 
   Stream<int> streamJoinedChainCount(String userId) {

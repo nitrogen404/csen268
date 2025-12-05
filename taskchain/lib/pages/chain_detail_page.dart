@@ -1,12 +1,14 @@
 import 'dart:io';
 import 'dart:async';
 import 'dart:ui';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:confetti/confetti.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:record/record.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -73,10 +75,19 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   bool _isDeleting = false;
   bool _isOwner = false;
   Set<String> _friendEmails = {};
+  late final ConfettiController _confettiController;
+  late final String _todayKey;
+  bool _hasCelebratedToday = false;
+  static final Set<String> _celebrationKeys = <String>{};
 
   @override
   void initState() {
     super.initState();
+    _todayKey = _dateKeyUtc(DateTime.now().toUtc());
+    _hasCelebratedToday =
+        _celebrationKeys.contains('${widget.chainId}-$_todayKey');
+    _confettiController =
+        ConfettiController(duration: const Duration(milliseconds: 1200));
     _markAsRead();
     ToastNotificationService().setCurrentChain(widget.chainId);
     _loadOwnership();
@@ -139,6 +150,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
 
   @override
   void dispose() {
+    _confettiController.dispose();
     ToastNotificationService().setCurrentChain(null);
     _chainSub?.cancel();
     _memberSub?.cancel();
@@ -456,22 +468,27 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Container(
-        decoration: BoxDecoration(
-          image: DecorationImage(
-            image: AssetImage(_getThemeAsset(widget.theme)),
-            fit: BoxFit.cover,
+      body: Stack(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage(_getThemeAsset(widget.theme)),
+                fit: BoxFit.cover,
+              ),
+            ),
+            child: Column(
+              children: [
+                _buildHeader(),
+                _buildCompleteButton(),
+                _buildChatHeader(),
+                _buildMessageList(),
+                _buildMessageInput(),
+              ],
+            ),
           ),
-        ),
-        child: Column(
-          children: [
-            _buildHeader(),
-            _buildCompleteButton(),
-            _buildChatHeader(),
-            _buildMessageList(),
-            _buildMessageInput(),
-          ],
-        ),
+          _buildConfettiOverlay(),
+        ],
       ),
     );
   }
@@ -496,6 +513,85 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
       default:
         return 'assets/images/ocean_bg.png';
     }
+  }
+
+  Path _drawStar(Size size) {
+    final path = Path();
+    final numberOfPoints = 5;
+    final halfWidth = size.width / 2;
+    final externalRadius = halfWidth;
+    final internalRadius = halfWidth / 2.2;
+    final degreesPerStep = 360 / numberOfPoints;
+    final halfDegreesPerStep = degreesPerStep / 2;
+    path.moveTo(size.width, halfWidth);
+
+    for (double step = 0; step < 360; step += degreesPerStep) {
+      final x1 = halfWidth +
+          externalRadius * math.cos(_degToRad(step - 90));
+      final y1 = halfWidth +
+          externalRadius * math.sin(_degToRad(step - 90));
+      path.lineTo(x1, y1);
+
+      final x2 = halfWidth +
+          internalRadius * math.cos(_degToRad(step + halfDegreesPerStep - 90));
+      final y2 = halfWidth +
+          internalRadius * math.sin(_degToRad(step + halfDegreesPerStep - 90));
+      path.lineTo(x2, y2);
+    }
+    path.close();
+    return path;
+  }
+
+  double _degToRad(double deg) => deg * (math.pi / 180.0);
+
+  Widget _buildConfettiOverlay() {
+    return IgnorePointer(
+      child: Stack(
+        children: [
+          Align(
+            alignment: Alignment.topCenter,
+            child: ConfettiWidget(
+              confettiController: _confettiController,
+              blastDirectionality: BlastDirectionality.explosive,
+              emissionFrequency: 0.05,
+              numberOfParticles: 26,
+              maxBlastForce: 24,
+              minBlastForce: 10,
+              gravity: 0.16,
+              shouldLoop: false,
+              colors: const [
+                Colors.deepOrange,
+                Colors.amber,
+                Colors.lightBlue,
+                Colors.green,
+                Colors.purple,
+                Colors.pinkAccent,
+              ],
+              createParticlePath: _drawStar,
+            ),
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: ConfettiWidget(
+              confettiController: _confettiController,
+              blastDirection: -math.pi / 2, // shoot upward from bottom
+              blastDirectionality: BlastDirectionality.directional,
+              emissionFrequency: 0.08,
+              numberOfParticles: 16,
+              maxBlastForce: 18,
+              minBlastForce: 8,
+              gravity: 0.08,
+              shouldLoop: false,
+              colors: const [
+                Colors.lightBlueAccent,
+                Colors.orangeAccent,
+                Colors.tealAccent,
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildHeader() {
@@ -639,6 +735,14 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     );
   }
 
+  void _triggerCelebrationIfNeeded() {
+    if (_hasCelebratedToday) return;
+    final key = '${widget.chainId}-$_todayKey';
+    _celebrationKeys.add(key);
+    _hasCelebratedToday = true;
+    _confettiController.play();
+  }
+
   Future<void> _onCompleteToday() async {
     final user = _authService.currentUser;
     if (user == null) return;
@@ -661,6 +765,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Today's activity completed.")),
         );
+        _triggerCelebrationIfNeeded();
         
         // Only show remind dialog if not everyone else has checked in
         if (!allOthersCheckedIn) {
