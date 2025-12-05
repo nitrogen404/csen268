@@ -68,7 +68,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
   final ImagePicker _picker = ImagePicker();
   final Map<String, String> _nameCache = {};
   final AudioRecorder _audioRecorder = AudioRecorder();
-
+  
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _chainSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _memberSub;
   bool _isRecording = false;
@@ -124,6 +124,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     // Listen for chain document changes so if the chain is deleted while this
     // screen is open (e.g., by the owner), all members are gracefully navigated
     // back to the home screen.
+    // Also detect when progress reaches 100% to show celebration video.
     _chainSub = FirebaseFirestore.instance
         .collection('chains')
         .doc(widget.chainId)
@@ -137,6 +138,17 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
         // Navigate back to the root (home tab) for all users.
         Navigator.of(context).popUntil((route) => route.isFirst);
         navIndex.value = 0;
+      } else if (snap.exists && mounted) {
+        // Check for 100% completion
+        final data = snap.data() ?? {};
+        final duration = (data['durationDays'] ?? 0) as int;
+        final completed = (data['totalDaysCompleted'] ?? 0) as int;
+        
+        double currentProgress = 0.0;
+        if (duration > 0 && completed > 0) {
+          currentProgress = (completed / duration).clamp(0.0, 1.0);
+        }
+
       }
     }, onError: (error) {
       // If we lose permission to read this chain (e.g., it was deleted and
@@ -157,6 +169,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     _messageController.dispose();
     _scrollController.dispose();
     _audioRecorder.dispose();
+    _confettiController.dispose();
     super.dispose();
   }
 
@@ -471,21 +484,21 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
       body: Stack(
         children: [
           Container(
-            decoration: BoxDecoration(
-              image: DecorationImage(
-                image: AssetImage(_getThemeAsset(widget.theme)),
-                fit: BoxFit.cover,
-              ),
-            ),
-            child: Column(
-              children: [
-                _buildHeader(),
-                _buildCompleteButton(),
-                _buildChatHeader(),
-                _buildMessageList(),
-                _buildMessageInput(),
-              ],
-            ),
+        decoration: BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage(_getThemeAsset(widget.theme)),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: Column(
+          children: [
+            _buildHeader(),
+            _buildCompleteButton(),
+            _buildChatHeader(),
+            _buildMessageList(),
+            _buildMessageInput(),
+          ],
+        ),
           ),
           _buildConfettiOverlay(),
         ],
@@ -636,10 +649,10 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                       );
                     },
                     child: Text(
-                      widget.chainTitle,
+            widget.chainTitle,
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
+            style: const TextStyle(
+              color: Colors.white,
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
                       ),
@@ -672,10 +685,10 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
+            children: [
+              Text(
                   '${(widget.progress * 100).toInt()}% Complete',
-                  style: const TextStyle(
+                style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 12,
                   ),
@@ -820,6 +833,8 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
     }
   }
 
+  /// Show confetti celebration when chain reaches 100% completion
+
   /// Check if all OTHER members (excluding current user) have checked in today
   Future<bool> _checkIfAllOtherMembersCheckedIn(String currentUserId) async {
     try {
@@ -895,7 +910,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        children: [
               Text(
                 'Change Theme',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
@@ -1035,7 +1050,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
           title: const Row(
             children: [
               Icon(Icons.notifications_active, color: Color(0xFF7B61FF)),
-              SizedBox(width: 8),
+          SizedBox(width: 8),
               Text('Remind Others?'),
             ],
           ),
@@ -1288,7 +1303,7 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                 child: Hero(
                   tag: 'chat_image_${msg.id}',
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(12),
                     child: Image.network(
                       msg.imageUrl!,
                       fit: BoxFit.cover,
@@ -1360,8 +1375,8 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                 child: Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: Row(
-                    children: [
+        child: Row(
+          children: [
                       // Glassy circular "+" button to open actions drawer.
                       Container(
                         decoration: BoxDecoration(
@@ -1383,43 +1398,43 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
                       ),
                       const SizedBox(width: 12),
                       // Message text field
-                      Expanded(
-                        child: TextField(
-                          controller: _messageController,
+            Expanded(
+              child: TextField(
+                controller: _messageController,
                           style: const TextStyle(
                             color: Colors.black87,
                             fontSize: 15,
                           ),
                           decoration: const InputDecoration(
-                            hintText: 'Type a message...',
+                  hintText: 'Type a message...',
                             border: InputBorder.none,
                             isDense: true,
                           ),
                           maxLines: 1,
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: (_) => _sendMessage(),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _sendMessage(),
+              ),
+            ),
+            const SizedBox(width: 12),
                       // Gradient circular send button
-                      Container(
+            Container(
                         width: 40,
                         height: 40,
-                        decoration: const BoxDecoration(
+              decoration: const BoxDecoration(
                           shape: BoxShape.circle,
-                          gradient: LinearGradient(
-                            colors: [Color(0xFF7B61FF), Color(0xFFFF6EC7)],
+                gradient: LinearGradient(
+                  colors: [Color(0xFF7B61FF), Color(0xFFFF6EC7)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
-                          ),
-                        ),
-                        child: IconButton(
-                          icon: const Icon(Icons.send, color: Colors.white),
+                ),
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.send, color: Colors.white),
                           padding: EdgeInsets.zero,
                           onPressed: _sendMessage,
-                        ),
-                      ),
-                    ],
+              ),
+            ),
+          ],
                   ),
                 ),
               ),
@@ -1675,12 +1690,12 @@ class _ChainDetailPageState extends State<ChainDetailPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Chain Members',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
+              Text(
+                'Chain Members',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                   TextButton.icon(
                     onPressed: () {
